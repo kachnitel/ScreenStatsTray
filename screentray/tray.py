@@ -1,38 +1,84 @@
-from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
+# file: tray.py
+from typing import Optional #, TYPE_CHECKING
+from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QTimer, QDate
 from .popup import StatsPopup
+from .session import current_session_seconds
 from .db import query_totals
-from .config import UPDATE_INTERVAL_MS
 
-class TrayApp(QSystemTrayIcon):
-    def __init__(self, icon: QIcon):
-        super().__init__(icon)
-        self.menu = QMenu()
-        self.popup = StatsPopup()
+# Configurable session alert threshold (minutes)
+ALERT_SESSION_MINUTES: int = 30
 
-        show_action = QAction("Show Stats")
-        show_action.triggered.connect(self.popup.show)
-        self.menu.addAction(show_action)
+# System theme icons
+ICON_NORMAL: str = "preferences-desktop"
+ICON_ALERT: str = "dialog-warning"
 
-        quit_action = QAction("Quit")
-        quit_action.triggered.connect(QApplication.instance().quit)
-        self.menu.addAction(quit_action)
+# if TYPE_CHECKING:
+#     Trigger = QSystemTrayIcon.ActivationReason.Trigger  # hint for type checker
 
-        self.setContextMenu(self.menu)
-        self.setToolTip("ScreenTracker")
-        self.show()
+class TrayApp:
+    def __init__(self) -> None:
+        # Initialize tray
+        self.tray: QSystemTrayIcon = QSystemTrayIcon(QIcon.fromTheme(ICON_NORMAL))
+        self.tray.setToolTip("ScreenTracker")
+        self.tray.show()
 
-        # auto-refresh tooltip
-        self.timer = QTimer()
+        # Keep popup reference
+        self.popup: Optional[StatsPopup] = None
+
+        # Connect left-click
+        self.tray.activated.connect(self.on_tray_activated)
+
+        # Context menu
+        menu: QMenu = QMenu()
+        exit_action: QAction = menu.addAction("Exit") # type: ignore[reportUnknownMemberType, reportAssignmentType]
+        exit_action.triggered.connect(self.exit)
+        self.tray.setContextMenu(menu)
+
+        # Timer to refresh tooltip and icon
+        self.timer: QTimer = QTimer()
         self.timer.timeout.connect(self.update_tooltip)
-        self.timer.start(UPDATE_INTERVAL_MS)
+        self.timer.start(10_000)  # every 10 seconds
+
+        # Initial tooltip
         self.update_tooltip()
 
-    def update_tooltip(self):
-        totals = query_totals(QDate.currentDate().toString("yyyy-MM-dd"))
-        active_sec = totals.get("active",0)
-        inactive_sec = totals.get("inactive",0)
-        h, m, s = int(active_sec//3600), int((active_sec%3600)//60), int(active_sec%60)
-        h2, m2, s2 = int(inactive_sec//3600), int((inactive_sec%3600)//60), int(inactive_sec%60)
-        self.setToolTip(f"Active: {h:02d}:{m:02d}:{s:02d}  Inactive: {h2:02d}:{m2:02d}:{s2:02d}")
+    def on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason == QSystemTrayIcon.Trigger: # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            if self.popup is None:
+                self.popup = StatsPopup()
+            self.popup.show()
+            self.popup.raise_()
+            self.popup.activateWindow()
+
+    def update_tooltip(self) -> None:
+        today: str = QDate.currentDate().toString("yyyy-MM-dd")
+        totals = query_totals(today)
+        active_sec: float = totals.get("active", 0)
+        inactive_sec: float = totals.get("inactive", 0)
+
+        # Current session
+        session_sec: float = current_session_seconds()
+        h_s, rem = divmod(int(session_sec), 3600)
+        m_s, s_s = divmod(rem, 60)
+
+        # Tooltip text
+        h_a, m_a, s_a = int(active_sec // 3600), int((active_sec % 3600) // 60), int(active_sec % 60)
+        h_i, m_i, s_i = int(inactive_sec // 3600), int((inactive_sec % 3600) // 60), int(inactive_sec % 60)
+        tooltip: str = (
+            f"Active: {h_a:02d}:{m_a:02d}:{s_a:02d}  "
+            f"Inactive: {h_i:02d}:{m_i:02d}:{s_i:02d}\n"
+            f"Current session: {h_s:02d}:{m_s:02d}:{s_s:02d}"
+        )
+        self.tray.setToolTip(tooltip)
+
+        # Change icon if session exceeds threshold
+        if session_sec / 60 >= ALERT_SESSION_MINUTES:
+            self.tray.setIcon(QIcon.fromTheme(ICON_ALERT))
+        else:
+            self.tray.setIcon(QIcon.fromTheme(ICON_NORMAL))
+
+    def exit(self) -> None:
+        self.tray.hide()
+        QApplication.quit()

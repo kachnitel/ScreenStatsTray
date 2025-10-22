@@ -2,7 +2,7 @@
 set -e
 echo "Installing ScreenTrackerTray..."
 
-# directories
+# Directories
 BIN="$HOME/.local/bin"
 LIB="$HOME/.local/lib/screentray"
 SYSTEMD_USER="$HOME/.config/systemd/user"
@@ -11,10 +11,10 @@ mkdir -p "$BIN"
 mkdir -p "$LIB"
 mkdir -p "$SYSTEMD_USER"
 
-# copy Python package
+# Copy Python package
 cp -r screentray/* "$LIB/"
 
-# wrapper scripts using -m to support relative imports
+# Wrapper scripts using -m to support relative imports
 cat > "$BIN/screentracker" <<'EOF'
 #!/bin/bash
 python3 "$HOME/.local/lib/screentray/screentracker.py" "$@"
@@ -27,29 +27,30 @@ EOF
 
 chmod +x "$BIN/screentracker" "$BIN/screentray"
 
-# copy systemd services
+# Copy systemd service files
 cp systemd/user/screentracker.service "$SYSTEMD_USER/"
+cp systemd/user/screentray.service "$SYSTEMD_USER/"
 
-# Update tray service to use python -m
-cat > "$SYSTEMD_USER/screentray.service" <<'EOF'
-[Unit]
-Description=ScreenTracker Tray App
-After=graphical-session.target plasma-workspace.target
+# Copy screenstats
+cp ./screenstats.sh "$BIN/screenstats"
+chmod +x "$BIN/screenstats"
 
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 -m screentray.main
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-EOF
-
-# reload systemd, enable + start services
+# Reload and enable services
 systemctl --user daemon-reload
 systemctl --user enable --now screentracker.service
 systemctl --user enable --now screentray.service
 
+# Wait a moment
+sleep 1
+
+# Check if tray is running
+if pgrep -f "python3 -m screentray.main" > /dev/null; then
+    echo "Tray icon is running."
+else
+    echo "Warning: Tray icon process not detected."
+    echo "You may need to check your DISPLAY/XAUTHORITY environment or run 'screentray' manually."
+fi
+
 echo "Installation complete!"
 echo "Tracker logs to ~/.local/share/screentracker.db"
-echo "Tray icon is running; click to view stats."
+echo "Use 'screenstats' to view usage summaries."

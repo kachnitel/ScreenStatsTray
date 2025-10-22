@@ -1,7 +1,11 @@
 import sqlite3
+from typing import Dict, List, Tuple
 from .config import DB_PATH
 
-def query_totals(day):
+def query_totals(day: str) -> Dict[str, float]:
+    """
+    Return total active/inactive seconds for a given day.
+    """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""
@@ -27,12 +31,16 @@ def query_totals(day):
         )
         SELECT state, SUM(seconds) FROM classified GROUP BY state
         """, (day,))
-        return dict(c.fetchall())
+        return {state: float(seconds) for state, seconds in c.fetchall()}
 
-def query_top_apps(day, limit=10):
+
+def query_top_apps(day: str, limit: int = 10) -> List[Tuple[str, float]]:
+    """
+    Return top applications and active time in seconds for a given day.
+    """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute(f"""
+        c.execute("""
         WITH cleaned AS (
             SELECT id, timestamp, type,
                    TRIM(SUBSTR(detail, INSTR(detail,'→')+1)) AS app,
@@ -48,4 +56,4 @@ def query_top_apps(day, limit=10):
         )
         SELECT app, SUM(seconds) FROM durations GROUP BY app ORDER BY SUM(seconds) DESC LIMIT ?
         """, (day, limit))
-        return c.fetchall()
+        return [(app, float(sec)) for app, sec in c.fetchall()]

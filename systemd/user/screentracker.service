@@ -1,5 +1,5 @@
 [Unit]
-Description=Screen activity tracker (auto-detect X11)
+Description=Screen activity tracker
 After=graphical-session.target plasma-workspace.target
 
 [Service]
@@ -8,8 +8,7 @@ ExecStart=/bin/bash -c '\
   DISPLAY=${DISPLAY:-:0}; \
   XAUTH=$(find /tmp -maxdepth 1 -type f -user $USER -name "xauth_*" | head -n1); \
   export DISPLAY XAUTHORITY=${XAUTH:-$XAUTHORITY}; \
-  echo "Using DISPLAY=$DISPLAY, XAUTHORITY=$XAUTHORITY"; \
-  exec "$HOME/.local/bin/screentracker.py" \
+  exec "$HOME/.local/lib/screentray/screentracker.py" \
 '
 Restart=on-failure
 
