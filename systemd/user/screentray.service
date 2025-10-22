@@ -1,0 +1,18 @@
+[Unit]
+Description=ScreenTracker Tray App
+After=graphical-session.target plasma-workspace.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c '\
+  DISPLAY=${DISPLAY:-:0}; \
+  XAUTH=$(find /tmp -maxdepth 1 -type f -user $USER -name "xauth_*" | head -n1); \
+  export DISPLAY XAUTHORITY=${XAUTH:-$XAUTHORITY}; \
+  export PYTHONPATH=$HOME/.local/bin:$PYTHONPATH; \
+  echo "Using DISPLAY=$DISPLAY, XAUTHORITY=$XAUTHORITY, PYTHONPATH=$PYTHONPATH"; \
+  exec /usr/bin/python3 -m screentray.main \
+'
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
