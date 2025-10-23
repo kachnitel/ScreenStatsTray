@@ -51,6 +51,55 @@ else
     echo "You may need to check your DISPLAY/XAUTHORITY environment or run 'screentray' manually."
 fi
 
-echo "Installation complete!"
 echo "Tracker logs to ~/.local/share/screentracker.db"
 echo "Use 'screenstats' to view usage summaries."
+
+echo
+read -p "Do you want to install the optional ScreenStats Web interface? [y/N]: " INSTALL_WEB
+
+if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
+    echo "Checking for Flask dependency..."
+    if ! python3 -c "import flask" 2>/dev/null; then
+        echo "Flask not found. Please install it first:"
+        echo "  pip install flask"
+        echo "Aborting web interface installation."
+        exit 0
+    fi
+
+    echo "Installing ScreenStats Web interface..."
+
+    # Copy app files (if exist)
+    cp screentray/web/screenstats_web.py "$LIB/"
+    cp screentray/web/web_static_index.html "$LIB/"
+
+    # Find an available port (starting at 5050)
+    PORT=5050
+    while ss -tuln | grep -q ":$PORT "; do
+        PORT=$((PORT + 1))
+    done
+    echo "Using port $PORT for the web interface."
+
+    # Create launcher script
+    cat > "$BIN/screenstats-web" <<EOF
+#!/bin/bash
+python3 "$HOME/.local/lib/screentray/web/screenstats_web.py" --port $PORT "$@"
+EOF
+    chmod +x "$BIN/screenstats-web"
+
+    # Copy systemd service file
+    cp systemd/user/screenstats-web.service "$SYSTEMD_USER/"
+
+    # Enable the service
+    systemctl --user daemon-reload
+    systemctl --user enable --now screenstats-web.service
+
+    echo
+    echo "✅ ScreenStats Web interface installed and running."
+    echo "Access it at: http://127.0.0.1:$PORT"
+    echo "Use 'systemctl --user status screenstats-web.service' for logs."
+else
+    echo "Skipping web interface installation."
+fi
+
+echo
+echo "Installation complete!"

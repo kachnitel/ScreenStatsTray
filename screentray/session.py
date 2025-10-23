@@ -5,7 +5,6 @@ from typing import Optional
 
 DB_PATH: str = os.path.expanduser("~/.local/share/screentracker.db")
 
-
 def get_last_active_time() -> Optional[datetime.datetime]:
     """
     Return the timestamp of the last 'screen_on' or 'idle_end' event.

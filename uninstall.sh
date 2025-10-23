@@ -3,8 +3,8 @@ set -e
 echo "Uninstalling ScreenTrackerTray..."
 
 # Stop and disable systemd services
-systemctl --user stop screentracker.service screentray.service
-systemctl --user disable screentracker.service screentray.service
+systemctl --user stop screentracker.service screentray.service screenstats-web.service
+systemctl --user disable screentracker.service screentray.service screenstats-web.service
 
 # Remove wrapper scripts
 rm -f ~/.local/bin/screentracker
@@ -16,6 +16,7 @@ rm -rf ~/.local/lib/screentray
 # Remove systemd service files
 rm -f ~/.config/systemd/user/screentracker.service
 rm -f ~/.config/systemd/user/screentray.service
+rm -f ~/.config/systemd/user/screenstats-web.service
 
 # Reload systemd
 systemctl --user daemon-reload

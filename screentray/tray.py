@@ -12,7 +12,7 @@ ALERT_SESSION_MINUTES: int = 30
 
 # System theme icons
 ICON_NORMAL: str = "preferences-desktop"
-ICON_ALERT: str = "dialog-warning"
+ICON_ALERT: str = "chronometer-pause-symbolic" #"dialog-warning"
 
 # if TYPE_CHECKING:
 #     Trigger = QSystemTrayIcon.ActivationReason.Trigger  # hint for type checker

@@ -1,0 +1,96 @@
+<!-- Minimal single-page UI to show periods and drill into a period -->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ScreenTracker — Debug UI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;padding:10px;background:#fff;color:#111}
+  .bar{height:28px;border:1px solid #ccc;background:#eee;position:relative;margin:10px 0}
+  .seg{position:absolute;top:0;height:100%;cursor:pointer}
+  .seg.active{background:green}
+  .seg.inactive{background:gray}
+  .seg.current{outline:2px solid yellow}
+  .info{margin-top:8px}
+  .events{max-height:300px;overflow:auto;border:1px solid #ddd;padding:6px}
+</style>
+</head>
+<body>
+<h3>ScreenTracker — Debug UI</h3>
+<button id="refresh">Refresh</button>
+<div id="timeline" class="bar"></div>
+<div class="info">
+  <strong>Selected period:</strong> <span id="sel-period">none</span>
+  <div id="period-details"></div>
+</div>
+<hr>
+<h4>Recent events</h4>
+<div>
+  <input id="q" placeholder="search events"/><button id="search">Search</button>
+</div>
+<div id="events" class="events"></div>
+
+<script>
+const API_ROOT = "/api";
+
+async function loadPeriods(){
+  const r = await fetch(API_ROOT + "/periods");
+  const periods = await r.json();
+  const bar = document.getElementById("timeline");
+  bar.innerHTML = "";
+  if(periods.error){ bar.innerText = periods.error; return; }
+  // Render segments
+  const total = 24*3600;
+  periods.forEach(p=>{
+    const s = new Date(p.start).getTime()/1000;
+    const e = new Date(p.end).getTime()/1000;
+    const start = (s % total);
+    const end = (e % total);
+    const left = (start/total)*100;
+    const width = Math.max(0.3, ((end-start)/total)*100);
+    const div = document.createElement("div");
+    div.className = "seg " + p.state;
+    div.style.left = left + "%";
+    div.style.width = width + "%";
+    div.dataset.start = p.start;
+    div.dataset.end = p.end;
+    div.dataset.state = p.state;
+    div.title = p.state + " " + p.start + " → " + p.end;
+    div.onclick = async () => {
+      document.getElementById("sel-period").innerText = p.state + " " + p.start + " → " + p.end;
+      // fetch per-app summary only for active periods
+      if(p.state === "active"){
+        const r2 = await fetch(`${API_ROOT}/periods/${encodeURIComponent(p.start)}/${encodeURIComponent(p.end)}/apps`);
+        const apps = await r2.json();
+        let html = "<h5>Apps</h5><ul>";
+        apps.forEach(a=> html += `<li>${a.app}: ${a.seconds}s</li>`);
+        html += "</ul>";
+        document.getElementById("period-details").innerHTML = html;
+      } else {
+        document.getElementById("period-details").innerHTML = "<em>inactive period</em>";
+      }
+    };
+    bar.appendChild(div);
+  });
+}
+
+async function loadEvents(q){
+  const r = await fetch(API_ROOT + "/events?limit=200&offset=0" + (q?("&q="+encodeURIComponent(q)):""));
+  const ev = await r.json();
+  const out = document.getElementById("events");
+  out.innerHTML = "";
+  ev.forEach(e=>{
+    const d = document.createElement("div");
+    d.textContent = `${e.timestamp} [${e.type}] ${e.detail||""}`;
+    out.appendChild(d);
+  });
+}
+
+document.getElementById("refresh").onclick = ()=>{ loadPeriods(); loadEvents(); };
+document.getElementById("search").onclick = ()=> loadEvents(document.getElementById("q").value);
+
+window.onload = ()=>{ loadPeriods(); loadEvents(); };
+</script>
+</body>
+</html>
