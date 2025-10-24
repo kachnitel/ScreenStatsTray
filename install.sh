@@ -2,6 +2,17 @@
 set -e
 echo "Installing ScreenTrackerTray..."
 
+INSTALL_WEB_FLAG=false
+
+# Parse arguments
+for arg in "$@"; do
+    case "$arg" in
+        --with-web|-w)
+            INSTALL_WEB_FLAG=true
+            ;;
+    esac
+done
+
 # Directories
 BIN="$HOME/.local/bin"
 LIB="$HOME/.local/lib/screentray"
@@ -14,10 +25,14 @@ mkdir -p "$SYSTEMD_USER"
 # Copy Python package
 cp -r screentray/* "$LIB/"
 
+# --- Initialize/Update SQLite database ---
+echo "Initializing/updating SQLite database..."
+python3 -m screentray.db_init
+
 # Wrapper scripts using -m to support relative imports
 cat > "$BIN/screentracker" <<'EOF'
 #!/bin/bash
-python3 "$HOME/.local/lib/screentray/screentracker.py" "$@"
+python3 -m screentray.screentracker "$@"
 EOF
 
 cat > "$BIN/screentray" <<'EOF'
@@ -54,16 +69,21 @@ fi
 echo "Tracker logs to ~/.local/share/screentracker.db"
 echo "Use 'screenstats' to view usage summaries."
 
-echo
-read -p "Do you want to install the optional ScreenStats Web interface? [y/N]: " INSTALL_WEB
+# --- Optional Web Interface ---
+if [[ "$INSTALL_WEB_FLAG" == true ]]; then
+    INSTALL_WEB="y"
+else
+    echo
+    read -p "Do you want to install the optional ScreenStats Web interface? [y/N]: " INSTALL_WEB
+fi
 
 if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
     echo "Checking for Flask dependency..."
     if ! python3 -c "import flask" 2>/dev/null; then
-        echo "Flask not found. Please install it first:"
+        echo "❌ Flask not found. Install with:"
         echo "  pip install flask"
         echo "Aborting web interface installation."
-        exit 0
+        exit 1
     fi
 
     echo "Installing ScreenStats Web interface..."
@@ -77,7 +97,7 @@ if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
     while ss -tuln | grep -q ":$PORT "; do
         PORT=$((PORT + 1))
     done
-    echo "Using port $PORT for the web interface."
+    echo "Using port $PORT"
 
     # Create launcher script
     cat > "$BIN/screenstats-web" <<EOF
@@ -94,12 +114,11 @@ EOF
     systemctl --user enable --now screenstats-web.service
 
     echo
-    echo "✅ ScreenStats Web interface installed and running."
-    echo "Access it at: http://127.0.0.1:$PORT"
-    echo "Use 'systemctl --user status screenstats-web.service' for logs."
+    echo "✅ Web UI running at: http://127.0.0.1:$PORT"
+    echo "Check logs: systemctl --user status screenstats-web.service"
 else
     echo "Skipping web interface installation."
 fi
 
 echo
-echo "Installation complete!"
+echo "✅ Installation complete."

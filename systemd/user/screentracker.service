@@ -8,7 +8,8 @@ ExecStart=/bin/bash -c '\
   DISPLAY=${DISPLAY:-:0}; \
   XAUTH=$(find /tmp -maxdepth 1 -type f -user $USER -name "xauth_*" | head -n1); \
   export DISPLAY XAUTHORITY=${XAUTH:-$XAUTHORITY}; \
-  exec "$HOME/.local/lib/screentray/screentracker.py" \
+  export PYTHONPATH=$HOME/.local/lib:$PYTHONPATH; \
+  exec /usr/bin/python3 -m screentray.screentracker \
 '
 Restart=on-failure
 
