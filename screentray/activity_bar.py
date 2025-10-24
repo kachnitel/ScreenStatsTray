@@ -4,30 +4,9 @@ import datetime
 import sqlite3
 from typing import List, Tuple
 from .db import DB_PATH
+from .session import get_current_session
 
 ALERT_SESSION_MINUTES: int = 30
-
-def get_current_session() -> Tuple[float, float]:
-    now = datetime.datetime.now()
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT timestamp, type
-            FROM events
-            WHERE type IN ('idle_end','screen_on')
-            ORDER BY id DESC
-            LIMIT 1
-        """)
-        row = cur.fetchone()
-        if not row:
-            return 0, 0
-        start = datetime.datetime.fromisoformat(row[0])
-        cur.execute("SELECT type FROM events ORDER BY id DESC LIMIT 1")
-        last_type = cur.fetchone()[0]
-        if last_type in ("idle_start", "screen_off"):
-            return 0, 0
-        duration = (now - start).total_seconds()
-        return start.timestamp(), duration
 
 class ActivityBar(QWidget):
     """24h rolling activity bar with active/inactive + session overlay."""

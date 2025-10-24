@@ -5,11 +5,15 @@ import subprocess
 import sqlite3
 import datetime
 from typing import Optional, Tuple, Any
+from .config import *
 
-DB_PATH: str = os.path.expanduser("~/.local/share/screentracker.db")
-LOG_INTERVAL: int = 2
-IDLE_THRESHOLD_MS: int = 300_000
-SWITCH_MIN_DURATION: int = 5  # seconds
+try:
+    import dbus # pyright: ignore[reportMissingTypeStubs]
+    import dbus.mainloop.glib # pyright: ignore[reportMissingTypeStubs]
+    from gi.repository import GLib # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType, reportAttributeAccessIssue]
+    DBUS_AVAILABLE = True
+except ImportError:
+    DBUS_AVAILABLE = False # pyright: ignore[reportConstantRedefinition]
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
@@ -88,6 +92,7 @@ def main() -> None:
                 last_app_time = now
 
         time.sleep(LOG_INTERVAL)
+
 
 if __name__ == "__main__":
     main()
