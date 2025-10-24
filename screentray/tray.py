@@ -48,9 +48,14 @@ class TrayApp:
         if reason == QSystemTrayIcon.Trigger: # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             if self.popup is None:
                 self.popup = StatsPopup()
-            self.popup.show()
-            self.popup.raise_()
-            self.popup.activateWindow()
+
+            if self.popup.isVisible():
+                self.popup.hide()
+            else:
+                self.popup.show()
+                self.popup.raise_()
+                self.popup.activateWindow()
+
 
     def update_tooltip(self) -> None:
         today: str = QDate.currentDate().toString("yyyy-MM-dd")
