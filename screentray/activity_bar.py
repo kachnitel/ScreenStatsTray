@@ -5,8 +5,7 @@ import sqlite3
 from typing import List, Tuple
 from .db import DB_PATH
 from .session import get_current_session
-
-ALERT_SESSION_MINUTES: int = 30
+from .config import ALERT_SESSION_MINUTES
 
 class ActivityBar(QWidget):
     """24h rolling activity bar with active/inactive + session overlay."""
