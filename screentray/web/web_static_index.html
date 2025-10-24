@@ -1,24 +1,71 @@
-<!-- Minimal single-page UI to show periods and drill into a period -->
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>ScreenTracker — Debug UI</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;padding:10px;background:#fff;color:#111}
-  .bar{height:28px;border:1px solid #ccc;background:#eee;position:relative;margin:10px 0}
-  .seg{position:absolute;top:0;height:100%;cursor:pointer}
-  .seg.active{background:green}
-  .seg.inactive{background:gray}
-  .seg.current{outline:2px solid yellow}
-  .info{margin-top:8px}
-  .events{max-height:300px;overflow:auto;border:1px solid #ddd;padding:6px}
+  :root {
+    color-scheme: light dark;
+    --bg-light: #fff;
+    --text-light: #111;
+    --bg-dark: #111;
+    --text-dark: #eee;
+    --bar-light: #eee;
+    --bar-dark: #333;
+    --border-light: #ccc;
+    --border-dark: #666;
+    --active: #2e8b57;
+    --inactive: #777;
+    --highlight: #ff0;
+  }
+
+  body {
+    font-family: system-ui, Segoe UI, Roboto, Arial;
+    margin: 0; padding: 10px;
+    background: var(--bg);
+    color: var(--text);
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .bar {
+    height: 28px;
+    border: 1px solid var(--border);
+    background: var(--bar);
+    position: relative;
+    margin: 10px 0;
+  }
+
+  .seg {
+    position: absolute;
+    top: 0; height: 100%;
+    cursor: pointer;
+  }
+  .seg.active { background: var(--active); }
+  .seg.inactive { background: var(--inactive); }
+  .seg.current { outline: 2px solid var(--highlight); }
+
+  .info { margin-top: 8px; }
+  .events { max-height: 300px; overflow:auto; border:1px solid var(--border); padding:6px; }
+
+  button, input {
+    background: var(--bar);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+  }
 </style>
 </head>
 <body>
 <h3>ScreenTracker — Debug UI</h3>
-<button id="refresh">Refresh</button>
+<div>
+  <button id="refresh">Refresh</button>
+  <select id="theme">
+    <option value="system">System</option>
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select>
+</div>
 <div id="timeline" class="bar"></div>
 <div class="info">
   <strong>Selected period:</strong> <span id="sel-period">none</span>
@@ -34,13 +81,33 @@
 <script>
 const API_ROOT = "/api";
 
+function applyTheme(mode) {
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = mode === "dark" || (mode === "system" && prefersDark);
+  document.documentElement.style.setProperty("--bg", dark ? "var(--bg-dark)" : "var(--bg-light)");
+  document.documentElement.style.setProperty("--text", dark ? "var(--text-dark)" : "var(--text-light)");
+  document.documentElement.style.setProperty("--bar", dark ? "var(--bar-dark)" : "var(--bar-light)");
+  document.documentElement.style.setProperty("--border", dark ? "var(--border-dark)" : "var(--border-light)");
+}
+
+function loadSavedTheme() {
+  const saved = localStorage.getItem("theme") || "system";
+  document.getElementById("theme").value = saved;
+  applyTheme(saved);
+}
+
+document.getElementById("theme").onchange = e => {
+  const val = e.target.value;
+  localStorage.setItem("theme", val);
+  applyTheme(val);
+};
+
 async function loadPeriods(){
   const r = await fetch(API_ROOT + "/periods");
   const periods = await r.json();
   const bar = document.getElementById("timeline");
   bar.innerHTML = "";
   if(periods.error){ bar.innerText = periods.error; return; }
-  // Render segments
   const total = 24*3600;
   periods.forEach(p=>{
     const s = new Date(p.start).getTime()/1000;
@@ -53,13 +120,9 @@ async function loadPeriods(){
     div.className = "seg " + p.state;
     div.style.left = left + "%";
     div.style.width = width + "%";
-    div.dataset.start = p.start;
-    div.dataset.end = p.end;
-    div.dataset.state = p.state;
     div.title = p.state + " " + p.start + " → " + p.end;
     div.onclick = async () => {
       document.getElementById("sel-period").innerText = p.state + " " + p.start + " → " + p.end;
-      // fetch per-app summary only for active periods
       if(p.state === "active"){
         const r2 = await fetch(`${API_ROOT}/periods/${encodeURIComponent(p.start)}/${encodeURIComponent(p.end)}/apps`);
         const apps = await r2.json();
@@ -90,7 +153,7 @@ async function loadEvents(q){
 document.getElementById("refresh").onclick = ()=>{ loadPeriods(); loadEvents(); };
 document.getElementById("search").onclick = ()=> loadEvents(document.getElementById("q").value);
 
-window.onload = ()=>{ loadPeriods(); loadEvents(); };
+window.onload = ()=>{ loadSavedTheme(); loadPeriods(); loadEvents(); };
 </script>
 </body>
 </html>
