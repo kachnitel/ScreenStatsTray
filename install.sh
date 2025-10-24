@@ -3,12 +3,16 @@ set -e
 echo "Installing ScreenTrackerTray..."
 
 INSTALL_WEB_FLAG=false
+DEV_MODE=false
 
 # Parse arguments
 for arg in "$@"; do
     case "$arg" in
         --with-web|-w)
             INSTALL_WEB_FLAG=true
+            ;;
+        --dev)
+            DEV_MODE=true
             ;;
     esac
 done
@@ -22,8 +26,18 @@ mkdir -p "$BIN"
 mkdir -p "$LIB"
 mkdir -p "$SYSTEMD_USER"
 
-# Copy Python package
-cp -r screentray/* "$LIB/"
+# Copy or symlink Python package
+if [[ "$DEV_MODE" == true ]]; then
+    echo "Dev mode: creating symlinks to current directory..."
+    find screentray -type f | while read -r f; do
+        dest="$LIB/${f#screentray/}"
+        mkdir -p "$(dirname "$dest")"
+        ln -sf "$(realpath "$f")" "$dest"
+    done
+else
+    echo "Installing to {$LIB}..."
+    cp -r screentray/* "$LIB/"
+fi
 
 # --- Initialize/Update SQLite database ---
 echo "Initializing/updating SQLite database..."
@@ -42,9 +56,14 @@ EOF
 
 chmod +x "$BIN/screentracker" "$BIN/screentray"
 
-# Copy systemd service files
-cp systemd/user/screentracker.service "$SYSTEMD_USER/"
-cp systemd/user/screentray.service "$SYSTEMD_USER/"
+# Copy or symlink systemd service files
+for svc in screentracker screentray; do
+    if [[ "$DEV_MODE" == true ]]; then
+        ln -sf "$(realpath systemd/user/$svc.service)" "$SYSTEMD_USER/$svc.service"
+    else
+        cp systemd/user/$svc.service "$SYSTEMD_USER/"
+    fi
+done
 
 # Copy screenstats
 cp ./screenstats.sh "$BIN/screenstats"
@@ -88,9 +107,13 @@ if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
 
     echo "Installing ScreenStats Web interface..."
 
-    # Copy app files (if exist)
-    cp screentray/web/screenstats_web.py "$LIB/"
-    cp screentray/web/web_static_index.html "$LIB/"
+    if [[ "$DEV_MODE" == true ]]; then
+        ln -sf "$(realpath screentray/web/screenstats_web.py)" "$LIB/"
+        ln -sf "$(realpath screentray/web/web_static_index.html)" "$LIB/"
+    else
+        cp screentray/web/screenstats_web.py "$LIB/"
+        cp screentray/web/web_static_index.html "$LIB/"
+    fi
 
     # Find an available port (starting at 5050)
     PORT=5050
@@ -106,8 +129,12 @@ python3 "$HOME/.local/lib/screentray/web/screenstats_web.py" --port $PORT "$@"
 EOF
     chmod +x "$BIN/screenstats-web"
 
-    # Copy systemd service file
-    cp systemd/user/screenstats-web.service "$SYSTEMD_USER/"
+    # Copy or symlink systemd service file
+    if [[ "$DEV_MODE" == true ]]; then
+        ln -sf "$(realpath systemd/user/screenstats-web.service)" "$SYSTEMD_USER/"
+    else
+        cp systemd/user/screenstats-web.service "$SYSTEMD_USER/"
+    fi
 
     # Enable the service
     systemctl --user daemon-reload
