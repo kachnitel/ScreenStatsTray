@@ -6,12 +6,13 @@ ScreenTracker Web Interface with diagnostics.
 from __future__ import annotations
 from flask import Flask, jsonify, request, send_file
 import sqlite3, datetime, os, sys, traceback, socket
-from typing import List, Tuple, Optional
+from typing import Any, List#, Tuple, Optional
 
 APP = Flask(__name__, static_folder=".", static_url_path="")
 DB_PATH = os.path.expanduser("~/.local/share/screentracker.db")
 HOUR24 = datetime.timedelta(hours=24)
 
+INACTIVE_TYPES = ("idle_start","screen_off","lid_closed","system_suspend")
 
 # ---- Utilities ------------------------------------------------------------
 
@@ -51,31 +52,36 @@ def list_events(limit=200, offset=0, query=None) -> List[dict]:
             """, (limit, offset))
         return [dict(r) for r in cur.fetchall()]
 
-
-def merged_periods_past_24h() -> List[dict]:
+def merged_periods_past_24h() -> list[dict]:
+    """Merge consecutive events into active/inactive periods for the past 24h."""
     now = datetime.datetime.now()
-    since = now - HOUR24
+    since = now - datetime.timedelta(hours=24)
     with open_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT timestamp, type, id FROM events WHERE timestamp >= ? ORDER BY id ASC", (since.isoformat(),))
         rows = cur.fetchall()
 
+    # No events → single inactive period
     if not rows:
         return [{"start": since.isoformat(), "end": now.isoformat(), "state": "inactive"}]
 
-    periods = []
-    last_ts, last_state = since, "inactive"
+    periods: list[Any] = []
+    last_ts = since
+    last_state = "inactive"
+
     for r in rows:
         ts = datetime.datetime.fromisoformat(r["timestamp"])
         typ = r["type"]
-        state = "inactive" if typ in ("idle_start", "screen_off") else "active"
+        state = "inactive" if typ in INACTIVE_TYPES else "active"
         if state != last_state:
             periods.append((last_ts, ts, last_state))
-            last_ts, last_state = ts, state
+            last_ts = ts
+            last_state = state
+        # else continue, merge equal states
+
+    # Final period up to now
     periods.append((last_ts, now, last_state))
-
     return [{"start": s.isoformat(), "end": e.isoformat(), "state": st} for s, e, st in periods]
-
 
 def period_app_summary(start_iso: str, end_iso: str) -> List[dict]:
     start_dt, end_dt = datetime.datetime.fromisoformat(start_iso), datetime.datetime.fromisoformat(end_iso)

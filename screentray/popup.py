@@ -53,9 +53,10 @@ class StatsPopup(QWidget):
 
         # Last break
         last_break_sec: float = get_last_break_seconds()
-        last_break_from: str = ""
-        last_break_to: str = ""
+        last_break_from: str = "-"
+        last_break_to: str = "-"
         if last_break_sec > 0:
+            last_break_end: datetime.datetime = datetime.datetime.now()
             with sqlite3.connect(DB_PATH) as conn:
                 cur = conn.cursor()
                 cur.execute("""
@@ -69,10 +70,7 @@ class StatsPopup(QWidget):
                 row = cur.fetchone()
                 if row:
                     start_dt = datetime.datetime.fromisoformat(row[0])
-                    if row[2] == "idle_end":
-                        end_dt = datetime.datetime.fromisoformat(row[1])
-                    else:
-                        end_dt = datetime.datetime.now()
+                    end_dt = datetime.datetime.fromisoformat(row[1]) if row[2] == "idle_end" else last_break_end
                     last_break_from = start_dt.strftime("%H:%M:%S")
                     last_break_to = end_dt.strftime("%H:%M:%S")
 
@@ -81,8 +79,6 @@ class StatsPopup(QWidget):
             last_break_time: str = f"{h_b:02d}:{m_b:02d}:{s_b:02d}"
         else:
             last_break_time = "–"
-            last_break_from = "-"
-            last_break_to = "-"
 
         # Build HTML
         html: str = f"""
@@ -98,7 +94,7 @@ class StatsPopup(QWidget):
         """
 
         for state in ["active", "inactive"]:
-            sec: float = totals.get(state, 0)
+            sec: float = totals.get(state, 0.0)
             h, m, s = int(sec // 3600), int((sec % 3600) // 60), int(sec % 60)
             html += f"{state.capitalize()}: {h:02d}:{m:02d}:{s:02d}<br>"
 
@@ -109,7 +105,6 @@ class StatsPopup(QWidget):
 
         self.label.setText(html)
         self.activity_bar.update_segments()
-
 
     def prev_day(self) -> None:
         self.date -= datetime.timedelta(days=1)

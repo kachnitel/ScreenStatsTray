@@ -17,6 +17,9 @@ except ImportError:
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
+# Track suspend time to log it retroactively
+suspend_start_time: Optional[float] = None
+
 
 def db_exec(query: str, params: Tuple[Any, ...] = ()) -> None:
     """Execute a SQL query and commit."""
@@ -28,9 +31,11 @@ def db_exec(query: str, params: Tuple[Any, ...] = ()) -> None:
         conn.commit()
 
 
-def log_event(type_: str, detail: str = "") -> None:
-    """Log an event to the database and stdout."""
-    ts: str = datetime.datetime.now().isoformat(timespec="seconds")
+def log_event(type_: str, detail: str = "", timestamp: Optional[datetime.datetime] = None) -> None:
+    """Log an event to the database and stdout with optional custom timestamp."""
+    if timestamp is None:
+        timestamp = datetime.datetime.now()
+    ts: str = timestamp.isoformat(timespec="seconds")
     db_exec("INSERT INTO events (timestamp, type, detail) VALUES (?, ?, ?)", (ts, type_, detail))
     print(f"[{ts}] {type_} {detail}")
 
@@ -57,6 +62,8 @@ def is_screen_on() -> bool:
 
 def setup_dbus_listeners() -> None:
     """Subscribe to systemd logind signals for lid/suspend/resume."""
+    global suspend_start_time
+
     if not DBUS_AVAILABLE:
         return
 
@@ -64,7 +71,20 @@ def setup_dbus_listeners() -> None:
     bus = dbus.SystemBus() # pyright: ignore[reportPossiblyUnboundVariable]
 
     def sleep_signal_handler(suspend: bool) -> None:
-        log_event("system_suspend" if suspend else "system_resume")
+        global suspend_start_time
+
+        if suspend:
+            # About to suspend - record the time
+            suspend_start_time = time.time()
+            log_event("system_suspend")
+        else:
+            # Waking up
+            if suspend_start_time is not None:
+                # If we captured the pre-suspend time, use it
+                # But the signal might fire late, so just log resume at current time
+                pass
+            suspend_start_time = None
+            log_event("system_resume")
 
     bus.add_signal_receiver( # pyright: ignore[reportUnknownMemberType]
         sleep_signal_handler,
@@ -86,7 +106,7 @@ def setup_dbus_listeners() -> None:
         arg0="org.freedesktop.login1.Manager"
     )
 
-    # Start GLib loop in a separate thread or main thread
+    # Start GLib loop in a separate thread
     from threading import Thread
     def loop() -> None:
         GLib.MainLoop().run() # pyright: ignore[reportPossiblyUnboundVariable, reportUnknownMemberType]
@@ -127,7 +147,9 @@ def main() -> None:
         # Idle detection
         if idle != was_idle:
             if idle:
-                log_event("idle_start", f"idle > {IDLE_THRESHOLD_MS / 1000}s")
+                # Became idle - log it at the start of idle period (now - idle_ms)
+                idle_start_dt = datetime.datetime.now() - datetime.timedelta(milliseconds=idle_ms)
+                log_event("idle_start", f"idle > {IDLE_THRESHOLD_MS / 1000}s", timestamp=idle_start_dt)
             else:
                 log_event("idle_end")
                 last_activity_time = now
@@ -149,11 +171,7 @@ def main() -> None:
         if now - last_event_time > MAX_NO_EVENT_GAP:
             # Estimate that user became idle MAX_NO_EVENT_GAP seconds ago
             idle_start_time = datetime.datetime.fromtimestamp(now - MAX_NO_EVENT_GAP)
-            db_exec(
-                "INSERT INTO events (timestamp, type, detail) VALUES (?, ?, ?)",
-                (idle_start_time.isoformat(timespec="seconds"), "idle_start", "no activity gap"),
-            )
-            print(f"[{idle_start_time.isoformat(timespec='seconds')}] idle_start (no activity gap)")
+            log_event("idle_start", "no activity gap", timestamp=idle_start_time)
             last_event_time = now
             was_idle = True
             last_app = None
