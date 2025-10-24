@@ -1,1 +1,2 @@
-# empty __init__.py for package
+"""Screentray package."""
+# This file makes 'screentray' a Python package.

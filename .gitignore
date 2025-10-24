@@ -3,6 +3,7 @@ screentray/__pycache__/
 *.py[codz]
 *$py.class
 *.pyc
+*~
 
 # C extensions
 *.so

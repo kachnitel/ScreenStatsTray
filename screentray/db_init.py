@@ -8,9 +8,9 @@ import os
 from dataclasses import fields, MISSING
 from typing import Any, Set
 from screentray.models import Event
+from screentray.config import DB_PATH
 
-# Path to DB (expand ~)
-DB_PATH = os.path.expanduser(os.environ.get("SCREENTRACKER_DB", "~/.local/share/screentracker.db"))
+# Ensure directory exists
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 # Map Python types to SQLite types and default conversions
@@ -22,6 +22,7 @@ TYPE_MAP: dict[Any, str] = {
 }
 
 def convert_default(value: Any) -> str:
+    """Convert Python default value to SQL-safe string."""
     if isinstance(value, str):
         return f"'{value}'"
     elif isinstance(value, bool):
@@ -30,6 +31,7 @@ def convert_default(value: Any) -> str:
         return str(value)
 
 def init_db() -> None:
+    """Initialize or update the database schema."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -63,6 +65,7 @@ def init_db() -> None:
             col_def += " NOT NULL"
 
         if table_exists:
+            print(f"Adding column: {f.name}...")
             cursor.execute(f"ALTER TABLE events ADD COLUMN {col_def};")
         else:
             columns_list.append(col_def)
@@ -70,6 +73,7 @@ def init_db() -> None:
     # Create table if not exists
     if not table_exists:
         create_table_sql = f"CREATE TABLE events ({', '.join(columns_list)});"
+        print("Creating new 'events' table...")
         cursor.execute(create_table_sql)
 
     conn.commit()
