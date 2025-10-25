@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButt
 from PyQt5.QtGui import QPaintEvent
 from PyQt5.QtCore import QTimer
 import datetime
-from typing import List, Tuple
+from typing import List
 from .activity_bar import ActivityBar
 from ..services.stats_service import StatsService
 from ..services.session_service import SessionService
@@ -31,7 +31,7 @@ class StatsPopup(QWidget):
         self.date_label = QLabel()
         self.next_button = QPushButton("Next >")
         self.next_button.clicked.connect(self.next_day)
-        
+
         self.date_layout.addWidget(self.prev_button)
         self.date_layout.addStretch()
         self.date_layout.addWidget(self.date_label)
@@ -76,7 +76,7 @@ class StatsPopup(QWidget):
     def update_stats(self) -> None:
         """Reload all statistics and update labels."""
         self.date_label.setText(f"<b>{self.date.isoformat()}</b>")
-        
+
         # Check if "Next" button should be enabled
         self.next_button.setEnabled(self.date < datetime.date.today())
 

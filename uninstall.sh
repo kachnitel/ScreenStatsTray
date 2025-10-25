@@ -2,23 +2,34 @@
 set -e
 echo "Uninstalling ScreenTrackerTray..."
 
+# Service file names
+SERVICES="screentracker.service screentray.service screenstats-web.service"
+BINS="screentracker screentray"
+
 # Stop and disable systemd services
-systemctl --user stop screentracker.service screentray.service screenstats-web.service
-systemctl --user disable screentracker.service screentray.service screenstats-web.service
+echo "Stopping and disabling systemd services..."
+systemctl --user stop $SERVICES || true
+systemctl --user disable $SERVICES || true
 
 # Remove wrapper scripts
-rm -f ~/.local/bin/screentracker
-rm -f ~/.local/bin/screentray
+echo "Removing wrapper scripts..."
+for bin in $BINS; do
+    rm -f ~/.local/bin/$bin
+done
 
-# Remove Python package
+# Remove Python package (the symlink or the copied directory)
+echo "Removing Python package..."
+# Remove the symlink if in dev mode, or the directory otherwise
 rm -rf ~/.local/lib/screentray
 
 # Remove systemd service files
-rm -f ~/.config/systemd/user/screentracker.service
-rm -f ~/.config/systemd/user/screentray.service
-rm -f ~/.config/systemd/user/screenstats-web.service
+echo "Removing systemd files..."
+for svc in $SERVICES; do
+    rm -f ~/.config/systemd/user/$svc
+done
 
 # Reload systemd
+echo "Reloading systemd daemon..."
 systemctl --user daemon-reload
 
 # Optionally remove the database
@@ -30,4 +41,4 @@ else
     echo "Database kept."
 fi
 
-echo "ScreenTrackerTray uninstalled successfully."
+echo "✅ ScreenTrackerTray uninstalled successfully."

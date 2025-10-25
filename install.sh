@@ -19,57 +19,70 @@ done
 
 # Directories
 BIN="$HOME/.local/bin"
-LIB="$HOME/.local/lib/screentray"
+LIB_ROOT="$HOME/.local/lib"
+LIB_PKG="$LIB_ROOT/screentray" # This is the full path to the package directory
 SYSTEMD_USER="$HOME/.config/systemd/user"
+SERVICE_SRC="./systemd/user" # Source directory for service files
 
 mkdir -p "$BIN"
-mkdir -p "$LIB"
+mkdir -p "$LIB_ROOT" # Ensure LIB_ROOT exists
 mkdir -p "$SYSTEMD_USER"
 
-# Copy or symlink Python package
+# --- 1. Python Package Installation ---
+
 if [[ "$DEV_MODE" == true ]]; then
-    echo "Dev mode: creating symlinks to current directory..."
-    find screentray -type f | while read -r f; do
-        dest="$LIB/${f#screentray/}"
-        mkdir -p "$(dirname "$dest")"
-        ln -sf "$(realpath "$f")" "$dest"
-    done
+    echo "Dev mode: creating symlink for 'screentray' package..."
+
+    # **FIXED LOGIC:**
+    # 1. Remove the old directory or symlink first.
+    # 2. Create the symlink directly in LIB_ROOT.
+    rm -rf "$LIB_PKG"
+    ln -sfn "$(realpath screentray)" "$LIB_ROOT/screentray"
+
 else
-    echo "Installing to {$LIB}..."
-    cp -r screentray/* "$LIB/"
+    echo "Installing 'screentray' package to $LIB_PKG..."
+    # Ensure target is empty before copying
+    rm -rf "$LIB_PKG"
+    cp -r screentray "$LIB_ROOT/"
 fi
 
-# --- Initialize/Update SQLite database ---
+# --- 2. Database Initialization ---
 echo "Initializing/updating SQLite database..."
+# Run this using the installed/symlinked package
 python3 -m screentray.db_init
 
-# Wrapper scripts using -m to support relative imports
+# --- 3. Wrapper Scripts ---
+# Simple wrappers to execute the module
+echo "Creating wrapper scripts in $BIN..."
 cat > "$BIN/screentracker" <<'EOF'
 #!/bin/bash
-python3 -m screentray.screentracker "$@"
+exec python3 -m screentray.screentracker "$@"
 EOF
 
 cat > "$BIN/screentray" <<'EOF'
 #!/bin/bash
-python3 -m screentray.main "$@"
+exec python3 -m screentray.main "$@"
 EOF
 
 chmod +x "$BIN/screentracker" "$BIN/screentray"
 
-# Copy or symlink systemd service files
+# --- 4. Systemd Service Files (Tracker & Tray) ---
+echo "Installing core systemd service files..."
 for svc in screentracker screentray; do
+    if [[ ! -f "$SERVICE_SRC/$svc.service" ]]; then
+        echo "Error: systemd service file not found at $SERVICE_SRC/$svc.service"
+        echo "Please ensure all service files are correctly placed."
+        exit 1
+    fi
+
     if [[ "$DEV_MODE" == true ]]; then
-        ln -sf "$(realpath systemd/user/$svc.service)" "$SYSTEMD_USER/$svc.service"
+        ln -sf "$(realpath "$SERVICE_SRC/$svc.service")" "$SYSTEMD_USER/$svc.service"
     else
-        cp systemd/user/$svc.service "$SYSTEMD_USER/"
+        cp "$SERVICE_SRC/$svc.service" "$SYSTEMD_USER/"
     fi
 done
 
-# Copy screenstats
-cp ./screenstats.sh "$BIN/screenstats"
-chmod +x "$BIN/screenstats"
-
-# Reload and enable services
+# Reload and enable core services
 systemctl --user daemon-reload
 systemctl --user enable --now screentracker.service
 systemctl --user enable --now screentray.service
@@ -81,14 +94,12 @@ sleep 1
 if pgrep -f "python3 -m screentray.main" > /dev/null; then
     echo "Tray icon is running."
 else
-    echo "Warning: Tray icon process not detected."
-    echo "You may need to check your DISPLAY/XAUTHORITY environment or run 'screentray' manually."
+    echo "Warning: Tray icon process not detected. Check systemctl --user status screentray.service"
 fi
 
 echo "Tracker logs to ~/.local/share/screentracker.db"
-echo "Use 'screenstats' to view usage summaries."
 
-# --- Optional Web Interface ---
+# --- 5. Optional Web Interface ---
 if [[ "$INSTALL_WEB_FLAG" == true ]]; then
     INSTALL_WEB="y"
 else
@@ -97,52 +108,35 @@ else
 fi
 
 if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
+    WEB_SVC="screenstats-web"
     echo "Checking for Flask dependency..."
     if ! python3 -c "import flask" 2>/dev/null; then
         echo "❌ Flask not found. Install with:"
         echo "  pip install flask"
         echo "Aborting web interface installation."
-        exit 1
-    fi
-
-    echo "Installing ScreenStats Web interface..."
-
-    if [[ "$DEV_MODE" == true ]]; then
-        ln -sf "$(realpath screentray/web/screenstats_web.py)" "$LIB/"
-        ln -sf "$(realpath screentray/web/web_static_index.html)" "$LIB/"
+        # We don't exit the script, just skip web install
     else
-        cp screentray/web/screenstats_web.py "$LIB/"
-        cp screentray/web/web_static_index.html "$LIB/"
+        echo "✅ Flask found."
+
+        # Copy or symlink systemd service file
+        if [[ ! -f "$SERVICE_SRC/$WEB_SVC.service" ]]; then
+            echo "Error: Web service file not found at $SERVICE_SRC/$WEB_SVC.service"
+        else
+            if [[ "$DEV_MODE" == true ]]; then
+                ln -sf "$(realpath "$SERVICE_SRC/$WEB_SVC.service")" "$SYSTEMD_USER/"
+            else
+                cp "$SERVICE_SRC/$WEB_SVC.service" "$SYSTEMD_USER/"
+            fi
+
+            # Enable the service
+            systemctl --user daemon-reload
+            systemctl --user enable --now $WEB_SVC.service
+
+            echo
+            echo "✅ Web UI service enabled. Check logs: systemctl --user status $WEB_SVC.service"
+            echo "It runs at port 5050 by default, see the service file for details."
+        fi
     fi
-
-    # Find an available port (starting at 5050)
-    PORT=5050
-    while ss -tuln | grep -q ":$PORT "; do
-        PORT=$((PORT + 1))
-    done
-    echo "Using port $PORT"
-
-    # Create launcher script
-    cat > "$BIN/screenstats-web" <<EOF
-#!/bin/bash
-python3 "$HOME/.local/lib/screentray/web/screenstats_web.py" --port $PORT "$@"
-EOF
-    chmod +x "$BIN/screenstats-web"
-
-    # Copy or symlink systemd service file
-    if [[ "$DEV_MODE" == true ]]; then
-        ln -sf "$(realpath systemd/user/screenstats-web.service)" "$SYSTEMD_USER/"
-    else
-        cp systemd/user/screenstats-web.service "$SYSTEMD_USER/"
-    fi
-
-    # Enable the service
-    systemctl --user daemon-reload
-    systemctl --user enable --now screenstats-web.service
-
-    echo
-    echo "✅ Web UI running at: http://127.0.0.1:$PORT"
-    echo "Check logs: systemctl --user status screenstats-web.service"
 else
     echo "Skipping web interface installation."
 fi

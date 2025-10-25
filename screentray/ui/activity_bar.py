@@ -1,9 +1,9 @@
 """24h activity bar widget."""
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QPaintEvent
-from PyQt5.QtCore import Qt
+# from PyQt5.QtCore import Qt
 import datetime
-from typing import List, Dict
+from typing import Any, List, Dict
 from ..services.activity_service import ActivityService
 from ..services.session_service import SessionService
 from ..config import ALERT_SESSION_MINUTES
@@ -17,7 +17,7 @@ class ActivityBar(QWidget):
         self.setFixedHeight(20)
         self.activity_service = ActivityService()
         self.session_service = SessionService()
-        self.periods: List[Dict[str, any]] = []
+        self.periods: List[Dict[str, Any]] = []
         self.setMouseTracking(True)
 
     def update_data(self) -> None:
@@ -25,7 +25,7 @@ class ActivityBar(QWidget):
         self.periods = self.activity_service.get_activity_periods_last_24h()
         self.update()
 
-    def paintEvent(self, event: QPaintEvent | None = None) -> None:
+    def paintEvent(self, a0: QPaintEvent | None = None) -> None:
         """Draw the activity bar."""
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("lightgray"))
