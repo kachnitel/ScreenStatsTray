@@ -6,7 +6,7 @@ ScreenTracker Web Interface with enhanced diagnostics.
 from __future__ import annotations
 from flask import Flask, jsonify, request, send_file
 import sqlite3, datetime, os, sys, traceback, socket
-from typing import Any, List, Dict
+from typing import Any, List
 
 APP = Flask(__name__, static_folder=".", static_url_path="")
 DB_PATH = os.path.expanduser("~/.local/share/screentracker.db")
@@ -56,7 +56,7 @@ def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
             SELECT id, timestamp, type, detail
             FROM events
             WHERE timestamp >= ?
-            ORDER BY timestamp ASC
+            ORDER BY id ASC
         """, (since.isoformat(),))
         rows = cur.fetchall()
 
@@ -74,11 +74,14 @@ def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
     last_ts = since
     last_state = "inactive"
     current_events: list[dict[str, Any]] = []
+    last_event_ts = since
+
+    # Idle threshold in seconds
+    gap_threshold = 600  # 10 minutes
 
     for r in rows:
         ts = datetime.datetime.fromisoformat(r["timestamp"])
         typ = r["type"]
-        state = "inactive" if typ in INACTIVE_TYPES else "active"
 
         event_dict: dict[str, Any] = {
             "id": r["id"],
@@ -86,6 +89,41 @@ def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
             "type": typ,
             "detail": r["detail"] or ""
         }
+
+        # Check for gaps
+        gap = (ts - last_event_ts).total_seconds()
+        if gap > gap_threshold and last_state == "active":
+            # Gap detected - insert inactive period
+            periods.append({
+                "start": last_ts.isoformat(),
+                "end": last_event_ts.isoformat(),
+                "state": last_state,
+                "duration_sec": (last_event_ts - last_ts).total_seconds(),
+                "trigger_event": None,
+                "events": current_events.copy()
+            })
+            periods.append({
+                "start": last_event_ts.isoformat(),
+                "end": ts.isoformat(),
+                "state": "inactive",
+                "duration_sec": gap,
+                "trigger_event": {"type": "gap", "detail": f"{gap:.0f}s gap"},
+                "events": []
+            })
+            last_ts = ts
+            last_state = "inactive"
+            current_events = []
+
+        # Determine state
+        if typ in INACTIVE_TYPES:
+            state = "inactive"
+        elif typ in ACTIVE_TYPES:
+            state = "active"
+        else:
+            # Non-state events
+            current_events.append(event_dict)
+            last_event_ts = ts
+            continue
 
         if state != last_state:
             # State change - close previous period
@@ -104,15 +142,37 @@ def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
             # Same state - add event to current period
             current_events.append(event_dict)
 
-    # Final period up to now
-    periods.append({
-        "start": last_ts.isoformat(),
-        "end": now.isoformat(),
-        "state": last_state,
-        "duration_sec": (now - last_ts).total_seconds(),
-        "trigger_event": None,
-        "events": current_events
-    })
+        last_event_ts = ts
+
+    # Check for final gap
+    gap = (now - last_event_ts).total_seconds()
+    if gap > gap_threshold and last_state == "active":
+        periods.append({
+            "start": last_ts.isoformat(),
+            "end": last_event_ts.isoformat(),
+            "state": last_state,
+            "duration_sec": (last_event_ts - last_ts).total_seconds(),
+            "trigger_event": None,
+            "events": current_events
+        })
+        periods.append({
+            "start": last_event_ts.isoformat(),
+            "end": now.isoformat(),
+            "state": "inactive",
+            "duration_sec": gap,
+            "trigger_event": {"type": "gap", "detail": f"{gap:.0f}s gap"},
+            "events": []
+        })
+    else:
+        # Final period up to now
+        periods.append({
+            "start": last_ts.isoformat(),
+            "end": now.isoformat(),
+            "state": last_state,
+            "duration_sec": (now - last_ts).total_seconds(),
+            "trigger_event": None,
+            "events": current_events
+        })
 
     return periods
 

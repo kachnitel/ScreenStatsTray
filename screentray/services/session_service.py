@@ -31,9 +31,30 @@ class SessionService:
         periods: List[Dict[str, Any]] = []
         last_ts = since
         last_state = "inactive"  # Assume inactive before first event
+        last_event_ts = since
 
         for event in events:
             ts = datetime.datetime.fromisoformat(event.timestamp)
+
+            # Check for gaps (no events > threshold = inactive)
+            gap = (ts - last_event_ts).total_seconds()
+            if gap > MAX_NO_EVENT_GAP and last_state == "active":
+                # Gap detected during active period - insert inactive period
+                gap_start = last_event_ts
+                periods.append({
+                    "start": last_ts,
+                    "end": gap_start,
+                    "state": last_state,
+                    "duration": (gap_start - last_ts).total_seconds()
+                })
+                periods.append({
+                    "start": gap_start,
+                    "end": ts,
+                    "state": "inactive",
+                    "duration": gap
+                })
+                last_ts = ts
+                last_state = "inactive"
 
             # Determine state from event type
             if event.type in EventRepository.INACTIVE_EVENTS:
@@ -41,7 +62,8 @@ class SessionService:
             elif event.type in EventRepository.ACTIVE_EVENTS:
                 new_state = "active"
             else:
-                # Non-state events (tracker_start, poll, etc.) don't change state
+                # Non-state events don't change state
+                last_event_ts = ts
                 continue
 
             # State changed - close previous period
@@ -55,13 +77,31 @@ class SessionService:
                 last_ts = ts
                 last_state = new_state
 
-        # Add final period to now
-        periods.append({
-            "start": last_ts,
-            "end": now,
-            "state": last_state,
-            "duration": (now - last_ts).total_seconds()
-        })
+            last_event_ts = ts
+
+        # Check for gap at end
+        gap = (now - last_event_ts).total_seconds()
+        if gap > MAX_NO_EVENT_GAP and last_state == "active":
+            periods.append({
+                "start": last_ts,
+                "end": last_event_ts,
+                "state": last_state,
+                "duration": (last_event_ts - last_ts).total_seconds()
+            })
+            periods.append({
+                "start": last_event_ts,
+                "end": now,
+                "state": "inactive",
+                "duration": gap
+            })
+        else:
+            # Add final period to now
+            periods.append({
+                "start": last_ts,
+                "end": now,
+                "state": last_state,
+                "duration": (now - last_ts).total_seconds()
+            })
 
         return periods
 

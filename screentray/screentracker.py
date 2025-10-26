@@ -10,10 +10,7 @@ from .config import DB_PATH, LOG_INTERVAL, IDLE_THRESHOLD_MS
 from .db import ensure_db_exists
 from .db.event_repository import EventRepository
 
-# Ensure DB directory exists
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
-# Convert threshold to seconds for easier comparison
 IDLE_THRESHOLD_SEC = IDLE_THRESHOLD_MS / 1000.0
 
 
@@ -23,23 +20,20 @@ def get_idle_seconds() -> float:
         idle_ms = int(subprocess.check_output(["xprintidle"]).strip())
         return idle_ms / 1000.0
     except (FileNotFoundError, subprocess.CalledProcessError):
-        print("Warning: 'xprintidle' not found. Defaulting to 0 idle.")
         return 0.0
 
 
 def is_screen_on() -> bool:
-    """Return True if monitor is on, False otherwise."""
+    """Return True if monitor is on."""
     try:
         out = subprocess.check_output(["xset", "-q"]).decode()
         return "Monitor is On" in out
     except (FileNotFoundError, subprocess.CalledProcessError):
-        print("Warning: 'xset' not found. Assuming screen is always on.")
         return True
 
 
 def main() -> None:
-    """Main loop for the activity tracker daemon."""
-    # Initialize database
+    """Main tracking loop."""
     ensure_db_exists()
     repo = EventRepository()
 
@@ -67,17 +61,17 @@ def main() -> None:
             # Log state transitions
             if new_state != current_state and current_state != "unknown":
                 if new_state == "active":
-                    # Became active
-                    transition_time = now - datetime.timedelta(seconds=idle_sec)
-                    repo.insert("idle_end", f"idle was {idle_sec:.0f}s", timestamp=transition_time)
-                    print(f"[{transition_time.isoformat(timespec='seconds')}] idle_end (idle was {idle_sec:.0f}s)")
+                    # Became active - use current time, idle was brief
+                    repo.insert("idle_end", f"idle was {idle_sec:.0f}s")
+                    print(f"[{now.isoformat(timespec='seconds')}] idle_end (idle was {idle_sec:.0f}s)")
                 else:
                     # Became inactive
                     if not screen_on:
                         repo.insert("screen_off")
                         print(f"[{now.isoformat(timespec='seconds')}] screen_off")
                     else:
-                        idle_start_time = now - datetime.timedelta(seconds=idle_sec)
+                        # Mark inactive at threshold crossing time
+                        idle_start_time = now - datetime.timedelta(seconds=idle_sec - IDLE_THRESHOLD_SEC)
                         repo.insert("idle_start", f"idle {idle_sec:.0f}s > {IDLE_THRESHOLD_SEC}s",
                                   timestamp=idle_start_time)
                         print(f"[{idle_start_time.isoformat(timespec='seconds')}] idle_start (idle {idle_sec:.0f}s)")
