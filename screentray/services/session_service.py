@@ -38,29 +38,42 @@ class SessionService:
 
             # Check for gaps (no events > threshold = inactive)
             gap = (ts - last_event_ts).total_seconds()
-            if gap > MAX_NO_EVENT_GAP and last_state == "active":
-                # Gap detected during active period - insert inactive period
-                gap_start = last_event_ts
-                periods.append({
-                    "start": last_ts,
-                    "end": gap_start,
-                    "state": last_state,
-                    "duration": (gap_start - last_ts).total_seconds()
-                })
-                periods.append({
-                    "start": gap_start,
-                    "end": ts,
-                    "state": "inactive",
-                    "duration": gap
-                })
-                last_ts = ts
-                last_state = "inactive"
+            if gap > MAX_NO_EVENT_GAP:
+                # Gap detected - insert inactive period
+                if last_state == "active":
+                    # Close active period, add gap
+                    periods.append({
+                        "start": last_ts,
+                        "end": last_event_ts,
+                        "state": last_state,
+                        "duration": (last_event_ts - last_ts).total_seconds()
+                    })
+                    periods.append({
+                        "start": last_event_ts,
+                        "end": ts,
+                        "state": "inactive",
+                        "duration": gap
+                    })
+                    last_ts = ts
+                    last_state = "inactive"
+                else:
+                    # Already inactive, just extend the gap
+                    pass
 
             # Determine state from event type
             if event.type in EventRepository.INACTIVE_EVENTS:
                 new_state = "inactive"
             elif event.type in EventRepository.ACTIVE_EVENTS:
                 new_state = "active"
+            elif event.type == "poll" and event.detail:
+                # Poll events contain state info - use them to infer state
+                if "state=active" in event.detail:
+                    new_state = "active"
+                elif "state=inactive" in event.detail:
+                    new_state = "inactive"
+                else:
+                    last_event_ts = ts
+                    continue
             else:
                 # Non-state events don't change state
                 last_event_ts = ts
@@ -81,21 +94,31 @@ class SessionService:
 
         # Check for gap at end
         gap = (now - last_event_ts).total_seconds()
-        if gap > MAX_NO_EVENT_GAP and last_state == "active":
-            periods.append({
-                "start": last_ts,
-                "end": last_event_ts,
-                "state": last_state,
-                "duration": (last_event_ts - last_ts).total_seconds()
-            })
-            periods.append({
-                "start": last_event_ts,
-                "end": now,
-                "state": "inactive",
-                "duration": gap
-            })
+        if gap > MAX_NO_EVENT_GAP:
+            # Large gap at end - force inactive
+            if last_state == "active":
+                periods.append({
+                    "start": last_ts,
+                    "end": last_event_ts,
+                    "state": last_state,
+                    "duration": (last_event_ts - last_ts).total_seconds()
+                })
+                periods.append({
+                    "start": last_event_ts,
+                    "end": now,
+                    "state": "inactive",
+                    "duration": gap
+                })
+            else:
+                # Already inactive, extend to now
+                periods.append({
+                    "start": last_ts,
+                    "end": now,
+                    "state": last_state,
+                    "duration": (now - last_ts).total_seconds()
+                })
         else:
-            # Add final period to now
+            # Normal final period
             periods.append({
                 "start": last_ts,
                 "end": now,

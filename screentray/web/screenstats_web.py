@@ -119,6 +119,16 @@ def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
             state = "inactive"
         elif typ in ACTIVE_TYPES:
             state = "active"
+        elif typ == "poll" and r["detail"]:
+            # Poll events contain state info
+            if "state=active" in r["detail"]:
+                state = "active"
+            elif "state=inactive" in r["detail"]:
+                state = "inactive"
+            else:
+                current_events.append(event_dict)
+                last_event_ts = ts
+                continue
         else:
             # Non-state events
             current_events.append(event_dict)
@@ -146,25 +156,37 @@ def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
 
     # Check for final gap
     gap = (now - last_event_ts).total_seconds()
-    if gap > gap_threshold and last_state == "active":
-        periods.append({
-            "start": last_ts.isoformat(),
-            "end": last_event_ts.isoformat(),
-            "state": last_state,
-            "duration_sec": (last_event_ts - last_ts).total_seconds(),
-            "trigger_event": None,
-            "events": current_events
-        })
-        periods.append({
-            "start": last_event_ts.isoformat(),
-            "end": now.isoformat(),
-            "state": "inactive",
-            "duration_sec": gap,
-            "trigger_event": {"type": "gap", "detail": f"{gap:.0f}s gap"},
-            "events": []
-        })
+    if gap > gap_threshold:
+        # Large gap at end - force inactive
+        if last_state == "active":
+            periods.append({
+                "start": last_ts.isoformat(),
+                "end": last_event_ts.isoformat(),
+                "state": last_state,
+                "duration_sec": (last_event_ts - last_ts).total_seconds(),
+                "trigger_event": None,
+                "events": current_events
+            })
+            periods.append({
+                "start": last_event_ts.isoformat(),
+                "end": now.isoformat(),
+                "state": "inactive",
+                "duration_sec": gap,
+                "trigger_event": {"type": "gap", "detail": f"{gap:.0f}s gap"},
+                "events": []
+            })
+        else:
+            # Already inactive, extend to now
+            periods.append({
+                "start": last_ts.isoformat(),
+                "end": now.isoformat(),
+                "state": last_state,
+                "duration_sec": (now - last_ts).total_seconds(),
+                "trigger_event": None,
+                "events": current_events
+            })
     else:
-        # Final period up to now
+        # Normal final period
         periods.append({
             "start": last_ts.isoformat(),
             "end": now.isoformat(),
