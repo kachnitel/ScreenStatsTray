@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 """
-Background service to track user activity (active/inactive periods)
-and log events to the SQLite database.
-
-Simplified approach:
-- Polls xprintidle every 2 seconds
-- Transitions to inactive after 10 minutes of idle
-- Logs state changes only
+Background service to track user activity with enhanced logging.
 """
 import os
 import time
@@ -49,22 +43,12 @@ def main() -> None:
     ensure_db_exists()
     repo = EventRepository()
 
-    # Track current state
-    is_active = True
+    # Track state
+    current_state = "unknown"
+    last_poll_log = datetime.datetime.now()
 
-    # Log startup
     repo.insert("tracker_start")
     print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] tracker_start")
-
-    # Initial state
-    screen_on = is_screen_on()
-    if screen_on:
-        repo.insert("screen_on")
-        print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] screen_on")
-    else:
-        repo.insert("screen_off")
-        print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] screen_off")
-        is_active = False
 
     print("Starting tracker main loop...")
 
@@ -74,39 +58,38 @@ def main() -> None:
             idle_sec = get_idle_seconds()
             screen_on = is_screen_on()
 
-            # Determine if user should be considered active
-            # Active means: screen is on AND idle time is below threshold
-            should_be_active = screen_on and idle_sec < IDLE_THRESHOLD_SEC
+            # Determine actual state
+            if screen_on and idle_sec < IDLE_THRESHOLD_SEC:
+                new_state = "active"
+            else:
+                new_state = "inactive"
 
-            # Handle state transitions
-            if should_be_active and not is_active:
-                # Transition: inactive -> active
-                transition_time = now - datetime.timedelta(seconds=idle_sec)
-                repo.insert("idle_end", timestamp=transition_time)
-                print(f"[{transition_time.isoformat(timespec='seconds')}] idle_end")
-                is_active = True
-
-            elif not should_be_active and is_active:
-                # Transition: active -> inactive
-                if not screen_on:
-                    # Screen turned off
-                    repo.insert("screen_off")
-                    print(f"[{now.isoformat(timespec='seconds')}] screen_off")
+            # Log state transitions
+            if new_state != current_state and current_state != "unknown":
+                if new_state == "active":
+                    # Became active
+                    transition_time = now - datetime.timedelta(seconds=idle_sec)
+                    repo.insert("idle_end", f"idle was {idle_sec:.0f}s", timestamp=transition_time)
+                    print(f"[{transition_time.isoformat(timespec='seconds')}] idle_end (idle was {idle_sec:.0f}s)")
                 else:
-                    # User went idle - log at the moment idleness started
-                    idle_start_time = now - datetime.timedelta(seconds=idle_sec)
-                    repo.insert("idle_start", f"idle > {IDLE_THRESHOLD_SEC}s", timestamp=idle_start_time)
-                    print(f"[{idle_start_time.isoformat(timespec='seconds')}] idle_start idle > {IDLE_THRESHOLD_SEC}s")
+                    # Became inactive
+                    if not screen_on:
+                        repo.insert("screen_off")
+                        print(f"[{now.isoformat(timespec='seconds')}] screen_off")
+                    else:
+                        idle_start_time = now - datetime.timedelta(seconds=idle_sec)
+                        repo.insert("idle_start", f"idle {idle_sec:.0f}s > {IDLE_THRESHOLD_SEC}s",
+                                  timestamp=idle_start_time)
+                        print(f"[{idle_start_time.isoformat(timespec='seconds')}] idle_start (idle {idle_sec:.0f}s)")
 
-                is_active = False
+            # Log polling data periodically for debugging (every 60s)
+            if (now - last_poll_log).total_seconds() >= 60:
+                detail = f"state={new_state} idle={idle_sec:.0f}s screen={'on' if screen_on else 'off'}"
+                repo.insert("poll", detail)
+                print(f"[{now.isoformat(timespec='seconds')}] poll: {detail}")
+                last_poll_log = now
 
-            # Also track screen state changes independently
-            # This handles screen coming back on (from sleep/screensaver)
-            elif screen_on and not is_active and idle_sec < IDLE_THRESHOLD_SEC:
-                # Screen came back on with activity
-                repo.insert("screen_on")
-                print(f"[{now.isoformat(timespec='seconds')}] screen_on")
-
+            current_state = new_state
             time.sleep(LOG_INTERVAL)
 
     except KeyboardInterrupt:

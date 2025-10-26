@@ -1,6 +1,6 @@
 """Service for session-related calculations (single source of truth)."""
 import datetime
-from typing import Optional, Tuple
+from typing import Tuple, List, Dict, Any
 from ..config import IDLE_THRESHOLD_MS
 from ..db.event_repository import EventRepository
 
@@ -8,56 +8,82 @@ MAX_NO_EVENT_GAP = IDLE_THRESHOLD_MS // 1000
 
 
 class SessionService:
-    """Handles all session-related calculations."""
+    """Handles all session-related calculations using period reconstruction."""
 
     def __init__(self) -> None:
         self.repo = EventRepository()
 
+    def _build_recent_periods(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """Build activity periods from events, same logic as web interface."""
+        now = datetime.datetime.now()
+        since = now - datetime.timedelta(hours=hours)
+
+        events = self.repo.find_events_in_period(since, now)
+
+        if not events:
+            return [{
+                "start": since,
+                "end": now,
+                "state": "inactive",
+                "duration": (now - since).total_seconds()
+            }]
+
+        periods: List[Dict[str, Any]] = []
+        last_ts = since
+        last_state = "inactive"  # Assume inactive before first event
+
+        for event in events:
+            ts = datetime.datetime.fromisoformat(event.timestamp)
+
+            # Determine state from event type
+            if event.type in EventRepository.INACTIVE_EVENTS:
+                new_state = "inactive"
+            elif event.type in EventRepository.ACTIVE_EVENTS:
+                new_state = "active"
+            else:
+                # Non-state events (tracker_start, poll, etc.) don't change state
+                continue
+
+            # State changed - close previous period
+            if new_state != last_state:
+                periods.append({
+                    "start": last_ts,
+                    "end": ts,
+                    "state": last_state,
+                    "duration": (ts - last_ts).total_seconds()
+                })
+                last_ts = ts
+                last_state = new_state
+
+        # Add final period to now
+        periods.append({
+            "start": last_ts,
+            "end": now,
+            "state": last_state,
+            "duration": (now - last_ts).total_seconds()
+        })
+
+        return periods
+
     def get_current_session(self) -> Tuple[datetime.datetime | None, float]:
         """
         Get current active session start time and duration.
-        Uses same logic as web interface: find last state-changing event.
 
         Returns:
             Tuple of (start_datetime, duration_seconds)
             Returns (None, 0.0) if no active session
         """
-        now = datetime.datetime.now()
+        periods = self._build_recent_periods(hours=24)
 
-        # Get the most recent event of any state-changing type
-        last_active = self.repo.find_last_active()
-        last_inactive = self.repo.find_last_inactive()
+        # Last period is current state
+        if not periods:
+            return (None, 0.0)
 
-        # Determine current state based on most recent event
-        if last_active and last_inactive:
-            active_ts = datetime.datetime.fromisoformat(last_active.timestamp)
-            inactive_ts = datetime.datetime.fromisoformat(last_inactive.timestamp)
+        current = periods[-1]
 
-            if active_ts > inactive_ts:
-                # Most recent event was active - we're in an active session
-                duration = (now - active_ts).total_seconds()
-
-                # Safety check: if too much time passed, consider inactive
-                if duration > MAX_NO_EVENT_GAP:
-                    return (None, 0.0)
-
-                return (active_ts, duration)
-            else:
-                # Most recent event was inactive
-                return (None, 0.0)
-
-        elif last_active:
-            # Only active events exist - we're active since that event
-            active_ts = datetime.datetime.fromisoformat(last_active.timestamp)
-            duration = (now - active_ts).total_seconds()
-
-            if duration > MAX_NO_EVENT_GAP:
-                return (None, 0.0)
-
-            return (active_ts, duration)
-
+        if current["state"] == "active":
+            return (current["start"], current["duration"])
         else:
-            # No events at all
             return (None, 0.0)
 
     def get_current_session_seconds(self) -> float:
@@ -73,31 +99,23 @@ class SessionService:
             Tuple of (break_start, break_end, duration_seconds)
             Returns (None, None, 0.0) if no recent break found
         """
-        now = datetime.datetime.now()
+        periods = self._build_recent_periods(hours=24)
 
-        last_active = self.repo.find_last_active()
-        last_inactive = self.repo.find_last_inactive()
-
-        if not last_inactive:
+        if not periods:
             return (None, None, 0.0)
 
-        inactive_ts = datetime.datetime.fromisoformat(last_inactive.timestamp)
+        current = periods[-1]
 
-        if last_active:
-            active_ts = datetime.datetime.fromisoformat(last_active.timestamp)
+        # If currently inactive, return current period as ongoing break
+        if current["state"] == "inactive":
+            return (current["start"], None, current["duration"])
 
-            if active_ts > inactive_ts:
-                # Break ended - return the completed break
-                duration = (active_ts - inactive_ts).total_seconds()
-                return (inactive_ts, active_ts, duration)
-            else:
-                # Still in break
-                duration = (now - inactive_ts).total_seconds()
-                return (inactive_ts, None, duration)
-        else:
-            # No active events, still in break
-            duration = (now - inactive_ts).total_seconds()
-            return (inactive_ts, None, duration)
+        # Otherwise find last inactive period
+        for period in reversed(periods[:-1]):
+            if period["state"] == "inactive":
+                return (period["start"], period["end"], period["duration"])
+
+        return (None, None, 0.0)
 
     def get_last_break_seconds(self) -> float:
         """Get duration of last break in seconds."""

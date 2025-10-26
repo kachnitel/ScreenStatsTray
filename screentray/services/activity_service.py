@@ -55,8 +55,11 @@ class ActivityService:
             # Determine state based on event type
             if event.type in EventRepository.INACTIVE_EVENTS:
                 new_state = "inactive"
-            else:
+            elif event.type in EventRepository.ACTIVE_EVENTS:
                 new_state = "active"
+            else:
+                # Non-state events don't trigger state changes
+                continue
 
             # State change - close previous period
             if new_state != last_state:
@@ -82,95 +85,3 @@ class ActivityService:
             })
 
         return periods
-
-    def get_app_usage_for_day(self, day: datetime.date) -> Dict[str, float]:
-        """
-        Calculate time spent per app for a specific day.
-
-        Returns:
-            Dict mapping app names to seconds of active usage
-        """
-        start = datetime.datetime.combine(day, datetime.time.min)
-        end = datetime.datetime.combine(day, datetime.time.max)
-
-        # Get app_switch events
-        events = self.repo.find_events_in_period(start, end, types=('app_switch',))
-
-        if not events:
-            return {}
-
-        app_times: Dict[str, float] = {}
-
-        # Get the app before first switch (if exists)
-        first_event = events[0]
-        prev_app = self._extract_app_from_detail(first_event.detail, is_target=False)
-        prev_ts = datetime.datetime.fromisoformat(first_event.timestamp)
-
-        for event in events:
-            event_ts = datetime.datetime.fromisoformat(event.timestamp)
-            current_app = self._extract_app_from_detail(event.detail, is_target=True)
-
-            # Credit time to previous app
-            if prev_app:
-                duration = (event_ts - prev_ts).total_seconds()
-
-                # Check if session was interrupted by inactive event
-                inactive_event = self.repo.find_last_by_types(
-                    EventRepository.INACTIVE_EVENTS,
-                    before=event_ts
-                )
-
-                if inactive_event:
-                    inactive_ts = datetime.datetime.fromisoformat(inactive_event.timestamp)
-                    # Only count time up to inactive event if it occurred during this period
-                    if inactive_ts > prev_ts and inactive_ts < event_ts:
-                        duration = (inactive_ts - prev_ts).total_seconds()
-
-                if duration > 0:
-                    app_times[prev_app] = app_times.get(prev_app, 0.0) + duration
-
-            prev_app = current_app
-            prev_ts = event_ts
-
-        # Handle last app until end of day or inactive event
-        if prev_app:
-            # Find if there was an inactive event after last switch
-            last_inactive = self.repo.find_last_by_types(
-                EventRepository.INACTIVE_EVENTS,
-                before=end
-            )
-
-            if last_inactive:
-                last_inactive_ts = datetime.datetime.fromisoformat(last_inactive.timestamp)
-                if last_inactive_ts > prev_ts:
-                    duration = (last_inactive_ts - prev_ts).total_seconds()
-                else:
-                    duration = (end - prev_ts).total_seconds()
-            else:
-                duration = (end - prev_ts).total_seconds()
-
-            if duration > 0:
-                app_times[prev_app] = app_times.get(prev_app, 0.0) + duration
-
-        return app_times
-
-    @staticmethod
-    def _extract_app_from_detail(detail: str, is_target: bool = True) -> str:
-        """
-        Extract app name from app_switch detail string.
-
-        Args:
-            detail: String like "app1 → app2"
-            is_target: If True, return app2; if False, return app1
-        """
-        if not detail or '→' not in detail:
-            return "unknown"
-
-        parts = detail.split('→')
-        if len(parts) != 2:
-            return "unknown"
-
-        if is_target:
-            return parts[1].strip()
-        else:
-            return parts[0].strip()
