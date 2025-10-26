@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
+<meta charset="utf-t">
 <title>ScreenTracker — Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -147,6 +147,65 @@
     margin-top: 10px;
     font-size: 0.9em;
   }
+
+  /* --- New UI Layout Styles --- */
+
+  /* Move stats to top right and make smaller */
+  #current-stats {
+    position: absolute;
+    top: 25px; /* Below main <h2> */
+    right: 10px;
+    display: flex;
+    gap: 15px;
+    font-size: 0.8em;
+    grid-template-columns: none; /* Override .stats default */
+    margin: 0; /* Override .stats default */
+  }
+  #current-stats .stat-box {
+    display: flex;
+    gap: 5px;
+    align-items: baseline;
+    padding: 0;
+    border: none;
+    background: none;
+  }
+  #current-stats .stat-box h4 {
+    margin: 0;
+    font-size: 1em;
+    font-weight: normal;
+    opacity: 0.8;
+  }
+  #current-stats .stat-box p {
+    margin: 0 !important;
+    font-size: 1em !important; /* Override JS inline style */
+    font-weight: bold;
+  }
+
+  /* Create two-column layout for overview tab */
+  .overview-layout {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+  }
+  .period-list-container {
+    flex: 1;
+    min-width: 300px;
+    max-width: 40%;
+  }
+  #periods {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    background: var(--bar);
+  }
+  /* Override defaults for details panel in new layout */
+  #period-details {
+    flex: 2; /* Take remaining space */
+    margin: 0; /* Reset margin */
+    height: fit-content; /* Don't stretch full height */
+    /* .details.show logic from JS will still work */
+  }
+
 </style>
 </head>
 <body>
@@ -159,7 +218,6 @@
   <div class="tab" data-tab="events">Events</div>
 </div>
 
-<!-- OVERVIEW TAB -->
 <div class="tab-content active" id="overview">
   <div class="controls">
     <button id="refresh">Refresh</button>
@@ -178,21 +236,25 @@
 
   <div class="stats" id="current-stats"></div>
 
-  <h3>Activity Periods</h3>
-  <div class="period-nav">
-    <button id="prev-period">← Prev</button>
-    <span id="period-index">-</span>
-    <button id="next-period">Next →</button>
-  </div>
-  <div id="periods"></div>
+  <div class="overview-layout">
 
-  <div class="details" id="period-details">
-    <h4>Period Details</h4>
-    <div id="detail-content"></div>
-  </div>
-</div>
+    <div class="period-list-container">
+      <h3>Activity Periods</h3>
+      <div class="period-nav">
+        <button id="prev-period">← Prev</button>
+        <span id="period-index">-</span>
+        <button id="next-period">Next →</button>
+      </div>
+      <div id="periods"></div>
+    </div>
 
-<!-- DAILY TAB -->
+    <div class="details" id="period-details">
+      <h4>Period Details</h4>
+      <div id="detail-content"></div>
+    </div>
+
+  </div> </div>
+
 <div class="tab-content" id="daily">
   <div class="controls">
     <input type="date" id="daily-date">
@@ -208,7 +270,6 @@
   </div>
 </div>
 
-<!-- WEEKLY TAB -->
 <div class="tab-content" id="weekly">
   <div class="controls">
     <button id="week-prev">← Prev Week</button>
@@ -224,7 +285,6 @@
   </div>
 </div>
 
-<!-- EVENTS TAB -->
 <div class="tab-content" id="events">
   <div class="controls">
     <input id="event-search" placeholder="Search events..."/>
@@ -240,6 +300,7 @@
 </div>
 
 <script>
+// --- ALL JAVASCRIPT IS UNCHANGED ---
 const API = "/api";
 let periods = [];
 let selectedIndex = -1;
