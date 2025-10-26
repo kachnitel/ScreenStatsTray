@@ -5,7 +5,7 @@ from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor
 from PyQt5.QtCore import QTimer, Qt
 from .popup import StatsPopup
 from ..services.session_service import SessionService
-from ..config import ALERT_SESSION_MINUTES, NOTIFY_BUTTONS # <-- FIXME
+from ..config import ALERT_SESSION_MINUTES, NOTIFY_BUTTONS
 
 ICON_NORMAL = "preferences-desktop"
 ICON_ALERT = "chronometer-pause-symbolic"
@@ -25,7 +25,7 @@ class TrayApp:
         # Context menu
         self.menu: QMenu = QMenu()
 
-        # --- FIXME: Conditionally build the Quick Actions menu ---
+        # Quick Actions menu
         actions_menu = QMenu("Quick Actions")
         actions_added = False
 
@@ -44,12 +44,9 @@ class TrayApp:
             lock_action.triggered.connect(self.lock_screen)
             actions_added = True
 
-        # Only add the "Quick Actions" menu and separator if any actions were added
         if actions_added:
             self.menu.addMenu(actions_menu)
             self.menu.addSeparator()
-        # --- END FIXME ---
-
 
         exit_action: QAction = self.menu.addAction("Exit")  # type: ignore[reportUnknownMemberType, reportAssignmentType]
         exit_action.triggered.connect(self.quit_app)
@@ -82,18 +79,24 @@ class TrayApp:
             else:
                 self.show_popup()
         elif reason == QSystemTrayIcon.ActivationReason.Context:
-            # Show menu explicitly on right-click for compatibility
             self.menu.exec_(QCursor.pos()) # pyright: ignore[reportUnknownMemberType]
 
     def update_status(self) -> None:
         """Update tray icon and tooltip based on activity."""
         is_active = self.session_service.is_currently_active()
-        session_s = self.session_service.get_current_session_seconds()
-        break_s = self.session_service.get_last_break_seconds()
 
         if is_active:
+            # Currently active - show session time
+            session_start, session_s = self.session_service.get_current_session()
+            break_start, break_end, break_s = self.session_service.get_last_break()
+
             session_m = session_s / 60.0
-            tooltip = f"Active: {int(session_m)}m\nLast Break: {int(break_s / 60)}m"
+            tooltip = f"Active: {int(session_m)}m"
+
+            if break_end:
+                # Last break ended
+                tooltip += f"\nLast Break: {int(break_s / 60)}m"
+
             if session_m >= ALERT_SESSION_MINUTES:
                 self.tray_icon.setIcon(QIcon.fromTheme(ICON_ALERT))
                 if not self.notified_threshold:
@@ -103,8 +106,18 @@ class TrayApp:
                 self.tray_icon.setIcon(self._create_icon("green"))
                 self.notified_threshold = False
         else:
-            tooltip = f"Idle: {int(break_s / 60)}m\nLast Session: {int(session_s / 60)}m"
+            # Currently inactive - show break time
+            break_start, break_end, break_s = self.session_service.get_last_break()
+
+            if break_end is None:
+                # Still in break
+                tooltip = f"Idle: {int(break_s / 60)}m"
+            else:
+                # Break ended, but not active yet
+                tooltip = "Idle"
+
             self.tray_icon.setIcon(self._create_icon("gray"))
+
         self.tray_icon.setToolTip(tooltip)
 
     def _create_icon(self, color_name: str) -> QIcon:

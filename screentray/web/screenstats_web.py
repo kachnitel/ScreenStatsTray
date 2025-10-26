@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-ScreenTracker Web Interface with diagnostics.
+ScreenTracker Web Interface with enhanced diagnostics.
 """
 
 from __future__ import annotations
 from flask import Flask, jsonify, request, send_file
 import sqlite3, datetime, os, sys, traceback, socket
-from typing import Any, List#, Tuple, Optional
+from typing import Any, List, Dict
 
 APP = Flask(__name__, static_folder=".", static_url_path="")
 DB_PATH = os.path.expanduser("~/.local/share/screentracker.db")
-HOUR24 = datetime.timedelta(hours=24)
 
-INACTIVE_TYPES = ("idle_start","screen_off","lid_closed","system_suspend")
+INACTIVE_TYPES = ("idle_start", "screen_off")
+ACTIVE_TYPES = ("idle_end", "screen_on")
 
 # ---- Utilities ------------------------------------------------------------
 
-def open_conn():
+def open_conn() -> sqlite3.Connection:
     if not os.path.exists(DB_PATH):
         raise FileNotFoundError(f"DB not found at {DB_PATH}")
     conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -24,17 +24,9 @@ def open_conn():
     return conn
 
 
-def _extract_app(detail: str) -> str:
-    if not detail:
-        return "unknown"
-    if "→" in detail:
-        return detail.split("→", 1)[1].strip()
-    return detail.strip()
-
-
 # ---- Data Queries ---------------------------------------------------------
 
-def list_events(limit=200, offset=0, query=None) -> List[dict]:
+def list_events(limit: int = 200, offset: int = 0, query: str | None = None) -> List[dict[str, Any]]:
     with open_conn() as conn:
         cur = conn.cursor()
         if query:
@@ -43,84 +35,125 @@ def list_events(limit=200, offset=0, query=None) -> List[dict]:
                 SELECT id, timestamp, type, detail
                 FROM events
                 WHERE type LIKE ? OR detail LIKE ?
-                ORDER BY id DESC LIMIT ? OFFSET ?
+                ORDER BY timestamp DESC LIMIT ? OFFSET ?
             """, (q, q, limit, offset))
         else:
             cur.execute("""
                 SELECT id, timestamp, type, detail
-                FROM events ORDER BY id DESC LIMIT ? OFFSET ?
+                FROM events ORDER BY timestamp DESC LIMIT ? OFFSET ?
             """, (limit, offset))
         return [dict(r) for r in cur.fetchall()]
 
-def merged_periods_past_24h() -> list[dict]:
-    """Merge consecutive events into active/inactive periods for the past 24h."""
+
+def get_periods_with_events(hours: int = 24) -> list[dict[str, Any]]:
+    """Get periods with all events that occurred within each period."""
     now = datetime.datetime.now()
-    since = now - datetime.timedelta(hours=24)
+    since = now - datetime.timedelta(hours=hours)
+
     with open_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT timestamp, type, id FROM events WHERE timestamp >= ? ORDER BY id ASC", (since.isoformat(),))
+        cur.execute("""
+            SELECT id, timestamp, type, detail
+            FROM events
+            WHERE timestamp >= ?
+            ORDER BY timestamp ASC
+        """, (since.isoformat(),))
         rows = cur.fetchall()
 
-    # No events → single inactive period
     if not rows:
-        return [{"start": since.isoformat(), "end": now.isoformat(), "state": "inactive"}]
+        return [{
+            "start": since.isoformat(),
+            "end": now.isoformat(),
+            "state": "inactive",
+            "duration_sec": (now - since).total_seconds(),
+            "trigger_event": None,
+            "events": []
+        }]
 
-    periods: list[Any] = []
+    periods: list[dict[str, Any]] = []
     last_ts = since
     last_state = "inactive"
+    current_events: list[dict[str, Any]] = []
 
     for r in rows:
         ts = datetime.datetime.fromisoformat(r["timestamp"])
         typ = r["type"]
         state = "inactive" if typ in INACTIVE_TYPES else "active"
+
+        event_dict: dict[str, Any] = {
+            "id": r["id"],
+            "timestamp": r["timestamp"],
+            "type": typ,
+            "detail": r["detail"] or ""
+        }
+
         if state != last_state:
-            periods.append((last_ts, ts, last_state))
+            # State change - close previous period
+            periods.append({
+                "start": last_ts.isoformat(),
+                "end": ts.isoformat(),
+                "state": last_state,
+                "duration_sec": (ts - last_ts).total_seconds(),
+                "trigger_event": event_dict,
+                "events": current_events.copy()
+            })
+            current_events = [event_dict]
             last_ts = ts
             last_state = state
-        # else continue, merge equal states
+        else:
+            # Same state - add event to current period
+            current_events.append(event_dict)
 
     # Final period up to now
-    periods.append((last_ts, now, last_state))
-    return [{"start": s.isoformat(), "end": e.isoformat(), "state": st} for s, e, st in periods]
+    periods.append({
+        "start": last_ts.isoformat(),
+        "end": now.isoformat(),
+        "state": last_state,
+        "duration_sec": (now - last_ts).total_seconds(),
+        "trigger_event": None,
+        "events": current_events
+    })
 
-def period_app_summary(start_iso: str, end_iso: str) -> List[dict]:
-    start_dt, end_dt = datetime.datetime.fromisoformat(start_iso), datetime.datetime.fromisoformat(end_iso)
+    return periods
+
+
+def get_daily_stats(day_str: str) -> dict[str, Any]:
+    """Get statistics for a specific day (YYYY-MM-DD)."""
+    day = datetime.date.fromisoformat(day_str)
+    start = datetime.datetime.combine(day, datetime.time.min)
+    end = datetime.datetime.combine(day, datetime.time.max)
+
     with open_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, timestamp, detail FROM events
-            WHERE timestamp >= ? AND timestamp <= ? AND type='app_switch'
-            ORDER BY id ASC
-        """, (start_dt.isoformat(), end_dt.isoformat()))
-        rows = cur.fetchall()
+            SELECT type, COUNT(*) as count
+            FROM events
+            WHERE timestamp >= ? AND timestamp <= ?
+            GROUP BY type
+        """, (start.isoformat(), end.isoformat()))
 
-    apps, prev_app, prev_ts = {}, None, start_dt
-    if rows:
-        first_id = rows[0]["id"]
-        with open_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT detail FROM events WHERE type='app_switch' AND id < ? ORDER BY id DESC LIMIT 1", (first_id,))
-            row = cur.fetchone()
-            if row:
-                prev_app = _extract_app(row["detail"])
+        event_counts = {row["type"]: row["count"] for row in cur.fetchall()}
 
-    for r in rows:
-        ts = datetime.datetime.fromisoformat(r["timestamp"])
-        app = _extract_app(r["detail"])
-        if prev_app:
-            apps[prev_app] = apps.get(prev_app, 0) + max(0, (ts - prev_ts).total_seconds())
-        prev_app, prev_ts = app, ts
+    # Calculate active/inactive time
+    periods = get_periods_with_events(hours=24)
+    active_sec = sum(p["duration_sec"] for p in periods if p["state"] == "active" and
+                     start.isoformat() <= p["start"] <= end.isoformat())
+    inactive_sec = sum(p["duration_sec"] for p in periods if p["state"] == "inactive" and
+                       start.isoformat() <= p["start"] <= end.isoformat())
 
-    if prev_app:
-        apps[prev_app] = apps.get(prev_app, 0) + max(0, (end_dt - prev_ts).total_seconds())
-
-    return [{"app": a, "seconds": int(s)} for a, s in sorted(apps.items(), key=lambda kv: kv[1], reverse=True)]
+    return {
+        "date": day_str,
+        "event_counts": event_counts,
+        "active_seconds": active_sec,
+        "inactive_seconds": inactive_sec,
+        "total_seconds": active_sec + inactive_sec
+    }
 
 
 # ---- Flask Routes ---------------------------------------------------------
 
 @APP.route("/api/events")
-def api_events():
+def api_events() -> Any:
     try:
         return jsonify(list_events(
             limit=int(request.args.get("limit", "200")),
@@ -132,30 +165,31 @@ def api_events():
 
 
 @APP.route("/api/periods")
-def api_periods():
+def api_periods() -> Any:
     try:
-        return jsonify(merged_periods_past_24h())
+        hours = int(request.args.get("hours", "24"))
+        return jsonify(get_periods_with_events(hours))
     except FileNotFoundError as e:
         return jsonify({"error": str(e)}), 404
 
 
-@APP.route("/api/periods/<start_iso>/<end_iso>/apps")
-def api_period_apps(start_iso, end_iso):
+@APP.route("/api/stats/<day_str>")
+def api_daily_stats(day_str: str) -> Any:
     try:
-        return jsonify(period_app_summary(start_iso, end_iso))
+        return jsonify(get_daily_stats(day_str))
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 400
 
 
 @APP.route("/")
-def index():
+def index() -> Any:
     return send_file(os.path.join(os.path.dirname(__file__), "web_static_index.html"))
 
 
 # ---- Diagnostics / Startup ------------------------------------------------
 
-def find_free_port(preferred=5050):
+def find_free_port(preferred: int = 5050) -> int:
     """Try preferred port, fall back if unavailable."""
     for port in (preferred, 8080, 5000):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -167,7 +201,7 @@ def find_free_port(preferred=5050):
     raise RuntimeError("No free port found (5050/8080/5000 busy)")
 
 
-def main():
+def main() -> None:
     print("=== ScreenTracker Web ===")
     print(f"Python: {sys.executable}")
     print(f"Flask:  {APP.import_name}")

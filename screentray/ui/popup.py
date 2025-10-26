@@ -58,14 +58,6 @@ class StatsPopup(QWidget):
         self.layout.addWidget(self.active_label)
         self.layout.addWidget(self.inactive_label)
 
-        # --- Top Apps ---
-        self.layout.addWidget(QLabel("<b>Top Apps:</b>"))
-        self.app_labels: List[QLabel] = []
-        for _ in range(5):  # Show top 5
-            label = QLabel("...")
-            self.layout.addWidget(label)
-            self.app_labels.append(label)
-
         # --- Timer for updates ---
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_stats)
@@ -76,33 +68,39 @@ class StatsPopup(QWidget):
     def update_stats(self) -> None:
         """Reload all statistics and update labels."""
         self.date_label.setText(f"<b>{self.date.isoformat()}</b>")
-
-        # Check if "Next" button should be enabled
         self.next_button.setEnabled(self.date < datetime.date.today())
 
         # Update 24h bar
         self.activity_bar.update_data()
 
         # Update current session/break
-        session_s = self.session_service.get_current_session_seconds()
-        break_s = self.session_service.get_last_break_seconds()
-        self.session_label.setText(f"Session: {self._format_seconds(session_s)}")
-        self.break_label.setText(f"Last Break: {self._format_seconds(break_s)}")
+        is_active = self.session_service.is_currently_active()
+
+        if is_active:
+            session_start, session_s = self.session_service.get_current_session()
+            break_start, break_end, break_s = self.session_service.get_last_break()
+
+            self.session_label.setText(f"Session: {self._format_seconds(session_s)}")
+
+            if break_end:
+                self.break_label.setText(f"Last Break: {self._format_seconds(break_s)}")
+            else:
+                self.break_label.setText("Last Break: (no recent break)")
+        else:
+            break_start, break_end, break_s = self.session_service.get_last_break()
+
+            if break_end is None:
+                self.session_label.setText("Session: Idle")
+                self.break_label.setText(f"Idle Duration: {self._format_seconds(break_s)}")
+            else:
+                self.session_label.setText("Session: No active session")
+                self.break_label.setText(f"Last Break: {self._format_seconds(break_s)}")
 
         # Update daily totals
         day_str = self.date.isoformat()
         totals = self.stats_service.get_daily_totals(day_str)
         self.active_label.setText(f"Active: {self._format_seconds(totals['active'])}")
         self.inactive_label.setText(f"Inactive: {self._format_seconds(totals['inactive'])}")
-
-        # Update top apps
-        top_apps = self.stats_service.get_top_apps(day_str, limit=5)
-        for i in range(5):
-            if i < len(top_apps):
-                app, seconds = top_apps[i]
-                self.app_labels[i].setText(f"{i+1}. {app}: {self._format_seconds(seconds)}")
-            else:
-                self.app_labels[i].setText(f"{i+1}. ...")
 
     def prev_day(self) -> None:
         """Go to the previous day."""

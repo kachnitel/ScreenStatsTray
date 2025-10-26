@@ -1,230 +1,118 @@
 #!/usr/bin/env python3
 """
-Background service to track user activity (idle, app switches, etc.)
+Background service to track user activity (active/inactive periods)
 and log events to the SQLite database.
+
+Simplified approach:
+- Polls xprintidle every 2 seconds
+- Transitions to inactive after 10 minutes of idle
+- Logs state changes only
 """
 import os
 import time
 import subprocess
-import sqlite3
 import datetime
-from typing import Optional, Tuple, Any
-from .config import *
-
-try:
-    import dbus # pyright: ignore[reportMissingTypeStubs]
-    import dbus.mainloop.glib # pyright: ignore[reportMissingTypeStubs]
-    from gi.repository import GLib # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType, reportAttributeAccessIssue]
-    DBUS_AVAILABLE = True
-except ImportError:
-    print("Warning: dbus/gi libraries not found. Suspend/lid events will not be tracked.")
-    DBUS_AVAILABLE = False # pyright: ignore[reportConstantRedefinition]
+from .config import DB_PATH, LOG_INTERVAL, IDLE_THRESHOLD_MS
+from .db import ensure_db_exists
+from .db.event_repository import EventRepository
 
 # Ensure DB directory exists
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-# Track suspend time to log it retroactively
-suspend_start_time: Optional[float] = None
+# Convert threshold to seconds for easier comparison
+IDLE_THRESHOLD_SEC = IDLE_THRESHOLD_MS / 1000.0
 
 
-def db_exec(query: str, params: Tuple[Any, ...] = ()) -> None:
-    """Execute a SQL query and commit."""
-    with sqlite3.connect(DB_PATH) as conn:
-        # Simple schema creation, idempotent
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT NOT NULL,
-                type TEXT NOT NULL,
-                detail TEXT DEFAULT ''
-            )
-            """
-        )
-        conn.execute(query, params)
-        conn.commit()
-
-
-def log_event(type_: str, detail: str = "", timestamp: Optional[datetime.datetime] = None) -> None:
-    """Log an event to the database and stdout with optional custom timestamp."""
-    if timestamp is None:
-        timestamp = datetime.datetime.now()
-    ts: str = timestamp.isoformat(timespec="seconds")
-    db_exec("INSERT INTO events (timestamp, type, detail) VALUES (?, ?, ?)", (ts, type_, detail))
-    print(f"[{ts}] {type_} {detail}")
-
-
-def get_idle_ms() -> int:
-    """Return the current idle time in milliseconds."""
+def get_idle_seconds() -> float:
+    """Return the current idle time in seconds."""
     try:
-        return int(subprocess.check_output(["xprintidle"]).strip())
+        idle_ms = int(subprocess.check_output(["xprintidle"]).strip())
+        return idle_ms / 1000.0
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("Warning: 'xprintidle' not found. Defaulting to 0 idle.")
-        return 0
-
-
-def get_active_window_name() -> Optional[str]:
-    """Return the WM_CLASS name of the currently active window."""
-    try:
-        wid: bytes = subprocess.check_output(["xdotool", "getactivewindow"]).strip()
-        name: str = subprocess.check_output(["xprop", "-id", wid, "WM_CLASS"]).decode()
-        # WM_CLASS(STRING) = "Navigator", "firefox"
-        # We want the second one, "firefox"
-        parts = name.split('"')
-        if len(parts) >= 4:
-            return parts[3] # Return 'firefox'
-        elif len(parts) >= 2:
-            return parts[1] # Fallback to 'Navigator'
-        return "unknown"
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        # xdotool or xprop not installed, or no window focused
-        return None
+        return 0.0
 
 
 def is_screen_on() -> bool:
     """Return True if monitor is on, False otherwise."""
     try:
-        out: str = subprocess.check_output(["xset", "-q"]).decode()
+        out = subprocess.check_output(["xset", "-q"]).decode()
         return "Monitor is On" in out
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("Warning: 'xset' not found. Assuming screen is always on.")
         return True
 
-def setup_dbus_listeners() -> None:
-    """Subscribe to systemd logind signals for lid/suspend/resume."""
-    global suspend_start_time
-
-    if not DBUS_AVAILABLE:
-        return
-
-    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True) # pyright: ignore[reportUnknownMemberType, reportPossiblyUnboundVariable]
-    bus = dbus.SystemBus() # pyright: ignore[reportPossiblyUnboundVariable]
-
-    def sleep_signal_handler(suspend: bool) -> None:
-        global suspend_start_time
-
-        if suspend:
-            # About to suspend - record the time
-            suspend_start_time = time.time()
-            log_event("system_suspend")
-        else:
-            # Waking up
-            if suspend_start_time is not None:
-                # If we captured the pre-suspend time, use it
-                # But the signal might fire late, so just log resume at current time
-                pass
-            suspend_start_time = None
-            log_event("system_resume")
-
-    bus.add_signal_receiver( # pyright: ignore[reportUnknownMemberType]
-        sleep_signal_handler,
-        dbus_interface="org.freedesktop.login1.Manager",
-        signal_name="PrepareForSleep"
-    )
-
-    # Listen to PropertiesChanged for lid
-    def lid_signal_handler(interface: Any, changed: Any, invalidated: Any) -> None:
-        if "LidClosed" in changed:
-            closed: bool = changed["LidClosed"]
-            log_event("lid_closed" if closed else "lid_open")
-
-    bus.add_signal_receiver( # pyright: ignore[reportUnknownMemberType]
-        lid_signal_handler,
-        dbus_interface="org.freedesktop.DBus.Properties",
-        signal_name="PropertiesChanged",
-        path="/org/freedesktop/login1",
-        arg0="org.freedesktop.login1.Manager"
-    )
-
-    # Start GLib loop in a separate thread
-    from threading import Thread
-    def loop() -> None:
-        try:
-            GLib.MainLoop().run() # pyright: ignore[reportPossiblyUnboundVariable, reportUnknownMemberType]
-        except KeyboardInterrupt:
-            pass
-    Thread(target=loop, daemon=True).start()
-    print("DBus listeners started.")
-
 
 def main() -> None:
-    """Main loop for the event tracker daemon."""
-    last_app: Optional[str] = None
-    last_app_time = time.time()
-    was_idle = False
-    was_on = is_screen_on()
-    last_event_time = time.time()
-    last_activity_time = time.time()
+    """Main loop for the activity tracker daemon."""
+    # Initialize database
+    ensure_db_exists()
+    repo = EventRepository()
 
-    log_event("tracker_start")
-    log_event("screen_on" if was_on else "screen_off")
+    # Track current state
+    is_active = True
 
-    # Setup DBus listeners for suspend/lid
-    setup_dbus_listeners()
+    # Log startup
+    repo.insert("tracker_start")
+    print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] tracker_start")
+
+    # Initial state
+    screen_on = is_screen_on()
+    if screen_on:
+        repo.insert("screen_on")
+        print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] screen_on")
+    else:
+        repo.insert("screen_off")
+        print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] screen_off")
+        is_active = False
 
     print("Starting tracker main loop...")
+
     try:
         while True:
-            now: float = time.time()
-            idle_ms: int = get_idle_ms()
-            idle: bool = idle_ms > IDLE_THRESHOLD_MS
+            now = datetime.datetime.now()
+            idle_sec = get_idle_seconds()
+            screen_on = is_screen_on()
 
-            # Screen state handling
-            on: bool = is_screen_on()
-            if on != was_on:
-                # Ignore spurious "screen_on" within threshold after last activity
-                if on and (now - last_activity_time) < (IDLE_THRESHOLD_MS / 1000):
-                    pass
+            # Determine if user should be considered active
+            # Active means: screen is on AND idle time is below threshold
+            should_be_active = screen_on and idle_sec < IDLE_THRESHOLD_SEC
+
+            # Handle state transitions
+            if should_be_active and not is_active:
+                # Transition: inactive -> active
+                transition_time = now - datetime.timedelta(seconds=idle_sec)
+                repo.insert("idle_end", timestamp=transition_time)
+                print(f"[{transition_time.isoformat(timespec='seconds')}] idle_end")
+                is_active = True
+
+            elif not should_be_active and is_active:
+                # Transition: active -> inactive
+                if not screen_on:
+                    # Screen turned off
+                    repo.insert("screen_off")
+                    print(f"[{now.isoformat(timespec='seconds')}] screen_off")
                 else:
-                    log_event("screen_on" if on else "screen_off")
-                    was_on = on
-                    last_event_time = now
-                    if on:
-                        last_activity_time = now
+                    # User went idle - log at the moment idleness started
+                    idle_start_time = now - datetime.timedelta(seconds=idle_sec)
+                    repo.insert("idle_start", f"idle > {IDLE_THRESHOLD_SEC}s", timestamp=idle_start_time)
+                    print(f"[{idle_start_time.isoformat(timespec='seconds')}] idle_start idle > {IDLE_THRESHOLD_SEC}s")
 
-        # Idle detection
-        if idle != was_idle:
-            if idle:
-                # Became idle - log it at the start of idle period (now - idle_ms)
-                idle_start_dt = datetime.datetime.now() - datetime.timedelta(milliseconds=idle_ms)
-                log_event("idle_start", f"idle > {IDLE_THRESHOLD_MS / 1000}s", timestamp=idle_start_dt)
-            else:
-                log_event("idle_end")
-                last_activity_time = now
-            was_idle = idle
-            last_event_time = now
+                is_active = False
 
-            # Foreground window tracking
-            if on and not idle:
-                app: Optional[str] = get_active_window_name()
-                if app and app != last_app:
-                    if last_app and now - last_app_time > SWITCH_MIN_DURATION:
-                        log_event("app_switch", f"{last_app} → {app}")
-                    last_app = app
-                    last_app_time = now
-                    last_event_time = now
-                    last_activity_time = now
-                elif not app:
-                    # No window focused (e.g., clicked on desktop)
-                    last_app = "Desktop" # Treat desktop as an "app"
-
-            # Fallback: no events for long period → assume inactive starting earlier
-            if now - last_event_time > MAX_NO_EVENT_GAP:
-                # Estimate that user became idle MAX_NO_EVENT_GAP seconds ago
-                idle_start_time = datetime.datetime.fromtimestamp(now - MAX_NO_EVENT_GAP)
-                db_exec(
-                    "INSERT INTO events (timestamp, type, detail) VALUES (?, ?, ?)",
-                    (idle_start_time.isoformat(timespec="seconds"), "idle_start", "no activity gap"),
-                )
-                print(f"[{idle_start_time.isoformat(timespec='seconds')}] idle_start (no activity gap)")
-                last_event_time = now
-                was_idle = True
-                last_app = None
+            # Also track screen state changes independently
+            # This handles screen coming back on (from sleep/screensaver)
+            elif screen_on and not is_active and idle_sec < IDLE_THRESHOLD_SEC:
+                # Screen came back on with activity
+                repo.insert("screen_on")
+                print(f"[{now.isoformat(timespec='seconds')}] screen_on")
 
             time.sleep(LOG_INTERVAL)
+
     except KeyboardInterrupt:
         print("\nTracker stopping.")
-        log_event("tracker_stop")
+        repo.insert("tracker_stop")
+        print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] tracker_stop")
 
 
 if __name__ == "__main__":

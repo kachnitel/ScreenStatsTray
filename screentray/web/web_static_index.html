@@ -7,80 +7,123 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg-light: #fff;
-    --text-light: #111;
-    --bg-dark: #111;
-    --text-dark: #eee;
-    --bar-light: #eee;
-    --bar-dark: #333;
-    --border-light: #ccc;
-    --border-dark: #666;
-    --active: #2e8b57;
-    --inactive: #777;
-    --highlight: #ff0;
+    --bg-light: #fff; --text-light: #111;
+    --bg-dark: #111; --text-dark: #eee;
+    --bar-light: #eee; --bar-dark: #333;
+    --border-light: #ccc; --border-dark: #666;
+    --active: #2e8b57; --inactive: #777;
+    --highlight: #ff0; --hover: #4a9d6f;
   }
-
   body {
     font-family: system-ui, Segoe UI, Roboto, Arial;
     margin: 0; padding: 10px;
-    background: var(--bg);
-    color: var(--text);
-    transition: background 0.2s, color 0.2s;
+    background: var(--bg); color: var(--text);
   }
-
-  .bar {
-    height: 28px;
+  .controls { margin: 10px 0; display: flex; gap: 10px; align-items: center; }
+  .timeline {
     border: 1px solid var(--border);
     background: var(--bar);
+    margin: 10px 0;
+    min-height: 40px;
     position: relative;
+  }
+  .period {
+    cursor: pointer;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+  .period:hover { background: var(--hover); opacity: 0.8; }
+  .period.active { background: var(--active); color: white; }
+  .period.inactive { background: var(--inactive); color: white; }
+  .period.selected { outline: 3px solid var(--highlight); }
+  .period-header { font-weight: bold; display: flex; justify-content: space-between; }
+  .period-nav { display: flex; gap: 5px; margin: 10px 0; }
+  .details {
+    margin: 15px 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    background: var(--bar);
+    display: none;
+  }
+  .details.show { display: block; }
+  .event-list { margin: 10px 0; }
+  .event-item {
+    padding: 5px;
+    margin: 3px 0;
+    background: var(--bg);
+    border-left: 3px solid var(--active);
+    font-family: monospace;
+    font-size: 0.9em;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
     margin: 10px 0;
   }
-
-  .seg {
-    position: absolute;
-    top: 0; height: 100%;
-    cursor: pointer;
-  }
-  .seg.active { background: var(--active); }
-  .seg.inactive { background: var(--inactive); }
-  .seg.current { outline: 2px solid var(--highlight); }
-
-  .info { margin-top: 8px; }
-  .events { max-height: 300px; overflow:auto; border:1px solid var(--border); padding:6px; }
-
-  button, input {
-    background: var(--bar);
-    color: var(--text);
+  .stat-box {
+    padding: 10px;
     border: 1px solid var(--border);
-    padding: 4px 8px;
+    background: var(--bar);
   }
+  button, select, input {
+    background: var(--bar); color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 12px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hidden { display: none; }
 </style>
 </head>
 <body>
-<h3>ScreenTracker — Debug UI</h3>
-<div>
+<h2>ScreenTracker — Debug UI</h2>
+
+<div class="controls">
   <button id="refresh">Refresh</button>
   <select id="theme">
-    <option value="system">System</option>
+    <option value="system">System Theme</option>
     <option value="light">Light</option>
     <option value="dark">Dark</option>
   </select>
+  <select id="hours">
+    <option value="24">Last 24h</option>
+    <option value="12">Last 12h</option>
+    <option value="6">Last 6h</option>
+    <option value="1">Last 1h</option>
+  </select>
+  <input type="date" id="date-picker">
 </div>
-<div id="timeline" class="bar"></div>
-<div class="info">
-  <strong>Selected period:</strong> <span id="sel-period">none</span>
-  <div id="period-details"></div>
+
+<div class="stats" id="daily-stats"></div>
+
+<h3>Activity Periods</h3>
+<div class="period-nav">
+  <button id="prev-period">← Prev</button>
+  <span id="period-index">-</span>
+  <button id="next-period">Next →</button>
 </div>
+<div class="timeline" id="periods"></div>
+
+<div class="details" id="period-details">
+  <h4>Period Details</h4>
+  <div id="detail-content"></div>
+</div>
+
 <hr>
-<h4>Recent events</h4>
-<div>
-  <input id="q" placeholder="search events"/><button id="search">Search</button>
+<h3>Recent Events</h3>
+<div class="controls">
+  <input id="q" placeholder="search events"/>
+  <button id="search">Search</button>
 </div>
-<div id="events" class="events"></div>
+<div class="event-list" id="events"></div>
 
 <script>
-const API_ROOT = "/api";
+const API = "/api";
+let periods = [];
+let selectedIndex = -1;
 
+// Theme management
 function applyTheme(mode) {
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const dark = mode === "dark" || (mode === "system" && prefersDark);
@@ -90,70 +133,202 @@ function applyTheme(mode) {
   document.documentElement.style.setProperty("--border", dark ? "var(--border-dark)" : "var(--border-light)");
 }
 
-function loadSavedTheme() {
+function loadTheme() {
   const saved = localStorage.getItem("theme") || "system";
   document.getElementById("theme").value = saved;
   applyTheme(saved);
 }
 
 document.getElementById("theme").onchange = e => {
-  const val = e.target.value;
-  localStorage.setItem("theme", val);
-  applyTheme(val);
+  localStorage.setItem("theme", e.target.value);
+  applyTheme(e.target.value);
 };
 
-async function loadPeriods(){
-  const r = await fetch(API_ROOT + "/periods");
-  const periods = await r.json();
-  const bar = document.getElementById("timeline");
-  bar.innerHTML = "";
-  if(periods.error){ bar.innerText = periods.error; return; }
-  const total = 24*3600;
-  periods.forEach(p=>{
-    const s = new Date(p.start).getTime()/1000;
-    const e = new Date(p.end).getTime()/1000;
-    const start = (s % total);
-    const end = (e % total);
-    const left = (start/total)*100;
-    const width = Math.max(0.3, ((end-start)/total)*100);
+// Format time duration
+function formatDuration(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+// Format timestamp
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString();
+}
+
+// Load and display periods
+async function loadPeriods() {
+  const hours = document.getElementById("hours").value;
+  const resp = await fetch(`${API}/periods?hours=${hours}`);
+  periods = await resp.json();
+
+  const container = document.getElementById("periods");
+  container.innerHTML = "";
+
+  if (periods.error) {
+    container.innerText = periods.error;
+    return;
+  }
+
+  periods.forEach((p, idx) => {
     const div = document.createElement("div");
-    div.className = "seg " + p.state;
-    div.style.left = left + "%";
-    div.style.width = width + "%";
-    div.title = p.state + " " + p.start + " → " + p.end;
-    div.onclick = async () => {
-      document.getElementById("sel-period").innerText = p.state + " " + p.start + " → " + p.end;
-      if(p.state === "active"){
-        const r2 = await fetch(`${API_ROOT}/periods/${encodeURIComponent(p.start)}/${encodeURIComponent(p.end)}/apps`);
-        const apps = await r2.json();
-        let html = "<h5>Apps</h5><ul>";
-        apps.forEach(a=> html += `<li>${a.app}: ${a.seconds}s</li>`);
-        html += "</ul>";
-        document.getElementById("period-details").innerHTML = html;
-      } else {
-        document.getElementById("period-details").innerHTML = "<em>inactive period</em>";
-      }
-    };
-    bar.appendChild(div);
+    div.className = `period ${p.state}`;
+    div.onclick = () => selectPeriod(idx);
+
+    const header = document.createElement("div");
+    header.className = "period-header";
+    header.innerHTML = `
+      <span>${p.state.toUpperCase()}</span>
+      <span>${formatDuration(p.duration_sec)}</span>
+    `;
+
+    const time = document.createElement("div");
+    time.style.fontSize = "0.9em";
+    time.style.opacity = "0.8";
+    time.innerText = `${formatTime(p.start)} → ${formatTime(p.end)}`;
+
+    div.appendChild(header);
+    div.appendChild(time);
+    container.appendChild(div);
+  });
+
+  // Auto-select most recent active period
+  const lastActive = periods.findIndex(p => p.state === "active");
+  if (lastActive >= 0) selectPeriod(lastActive);
+}
+
+// Select and show period details
+function selectPeriod(idx) {
+  selectedIndex = idx;
+  const p = periods[idx];
+
+  // Update selection visual
+  document.querySelectorAll(".period").forEach((el, i) => {
+    el.classList.toggle("selected", i === idx);
+  });
+
+  // Update navigation
+  document.getElementById("period-index").innerText = `Period ${idx + 1} / ${periods.length}`;
+  document.getElementById("prev-period").disabled = idx === 0;
+  document.getElementById("next-period").disabled = idx === periods.length - 1;
+
+  // Show details
+  const details = document.getElementById("period-details");
+  const content = document.getElementById("detail-content");
+
+  let html = `
+    <p><strong>State:</strong> ${p.state}</p>
+    <p><strong>Duration:</strong> ${formatDuration(p.duration_sec)}</p>
+    <p><strong>Start:</strong> ${p.start}</p>
+    <p><strong>End:</strong> ${p.end}</p>
+  `;
+
+  if (p.trigger_event) {
+    html += `
+      <p><strong>Triggered by:</strong> ${p.trigger_event.type}</p>
+      <p style="font-size:0.9em; opacity:0.8;">${p.trigger_event.timestamp}</p>
+    `;
+  }
+
+  if (p.events && p.events.length > 0) {
+    html += `<h5>Events in this period (${p.events.length}):</h5><div class="event-list">`;
+    p.events.forEach(e => {
+      html += `
+        <div class="event-item">
+          <strong>${e.type}</strong> @ ${formatTime(e.timestamp)}
+          ${e.detail ? `<br><span style="opacity:0.7">${e.detail}</span>` : ''}
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+  details.classList.add("show");
+}
+
+// Period navigation
+document.getElementById("prev-period").onclick = () => {
+  if (selectedIndex > 0) selectPeriod(selectedIndex - 1);
+};
+
+document.getElementById("next-period").onclick = () => {
+  if (selectedIndex < periods.length - 1) selectPeriod(selectedIndex + 1);
+};
+
+// Load daily stats
+async function loadDailyStats(date) {
+  const resp = await fetch(`${API}/stats/${date}`);
+  const stats = await resp.json();
+
+  const container = document.getElementById("daily-stats");
+  container.innerHTML = `
+    <div class="stat-box">
+      <h4>Active Time</h4>
+      <p style="font-size:1.5em; margin:5px 0;">${formatDuration(stats.active_seconds)}</p>
+    </div>
+    <div class="stat-box">
+      <h4>Inactive Time</h4>
+      <p style="font-size:1.5em; margin:5px 0;">${formatDuration(stats.inactive_seconds)}</p>
+    </div>
+    <div class="stat-box">
+      <h4>Events</h4>
+      ${Object.entries(stats.event_counts).map(([type, count]) =>
+        `<p>${type}: ${count}</p>`
+      ).join('')}
+    </div>
+  `;
+}
+
+// Load events
+async function loadEvents(q) {
+  const resp = await fetch(`${API}/events?limit=50&offset=0${q ? "&q=" + encodeURIComponent(q) : ""}`);
+  const events = await resp.json();
+
+  const container = document.getElementById("events");
+  container.innerHTML = "";
+
+  events.forEach(e => {
+    const div = document.createElement("div");
+    div.className = "event-item";
+    div.innerHTML = `
+      <strong>${e.type}</strong> @ ${e.timestamp}
+      ${e.detail ? `<br><span style="opacity:0.7">${e.detail}</span>` : ''}
+    `;
+    container.appendChild(div);
   });
 }
 
-async function loadEvents(q){
-  const r = await fetch(API_ROOT + "/events?limit=200&offset=0" + (q?("&q="+encodeURIComponent(q)):""));
-  const ev = await r.json();
-  const out = document.getElementById("events");
-  out.innerHTML = "";
-  ev.forEach(e=>{
-    const d = document.createElement("div");
-    d.textContent = `${e.timestamp} [${e.type}] ${e.detail||""}`;
-    out.appendChild(d);
-  });
-}
+// Event handlers
+document.getElementById("refresh").onclick = () => {
+  loadPeriods();
+  loadEvents();
+  const date = document.getElementById("date-picker").value || new Date().toISOString().split('T')[0];
+  loadDailyStats(date);
+};
 
-document.getElementById("refresh").onclick = ()=>{ loadPeriods(); loadEvents(); };
-document.getElementById("search").onclick = ()=> loadEvents(document.getElementById("q").value);
+document.getElementById("search").onclick = () => {
+  loadEvents(document.getElementById("q").value);
+};
 
-window.onload = ()=>{ loadSavedTheme(); loadPeriods(); loadEvents(); };
+document.getElementById("hours").onchange = loadPeriods;
+
+document.getElementById("date-picker").onchange = (e) => {
+  loadDailyStats(e.target.value);
+};
+
+// Initialize
+window.onload = () => {
+  loadTheme();
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById("date-picker").value = today;
+  loadPeriods();
+  loadEvents();
+  loadDailyStats(today);
+};
 </script>
 </body>
 </html>
