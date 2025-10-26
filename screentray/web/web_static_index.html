@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ScreenTracker — Debug UI</title>
+<title>ScreenTracker — Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   :root {
@@ -19,14 +19,30 @@
     margin: 0; padding: 10px;
     background: var(--bg); color: var(--text);
   }
-  .controls { margin: 10px 0; display: flex; gap: 10px; align-items: center; }
-  .timeline {
-    border: 1px solid var(--border);
-    background: var(--bar);
-    margin: 10px 0;
-    min-height: 40px;
-    position: relative;
+  .tabs {
+    display: flex;
+    gap: 5px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 10px;
   }
+  .tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    background: var(--bar);
+    border: 1px solid var(--border);
+    border-bottom: none;
+  }
+  .tab.active {
+    background: var(--bg);
+    font-weight: bold;
+  }
+  .tab-content {
+    display: none;
+  }
+  .tab-content.active {
+    display: block;
+  }
+  .controls { margin: 10px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .period {
     cursor: pointer;
     padding: 8px;
@@ -73,55 +89,162 @@
     padding: 6px 12px; cursor: pointer;
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .chart {
+    margin: 20px 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    background: var(--bar);
+  }
+  .bar-chart {
+    display: flex;
+    align-items: flex-end;
+    height: 200px;
+    gap: 2px;
+    margin-top: 10px;
+  }
+  .bar {
+    flex: 1;
+    background: var(--active);
+    position: relative;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .bar:hover { opacity: 0.7; }
+  .bar-label {
+    position: absolute;
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.8em;
+    white-space: nowrap;
+  }
+  .bar-value {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.8em;
+    font-weight: bold;
+  }
+  .week-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+    margin: 10px 0;
+  }
+  .day-cell {
+    padding: 10px;
+    border: 1px solid var(--border);
+    background: var(--bar);
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.2s;
+  }
+  .day-cell:hover { background: var(--hover); }
+  .day-cell.today { border: 2px solid var(--active); }
   .hidden { display: none; }
+  .toggle-btn {
+    margin-top: 10px;
+    font-size: 0.9em;
+  }
 </style>
 </head>
 <body>
-<h2>ScreenTracker — Debug UI</h2>
+<h2>ScreenTracker Dashboard</h2>
 
-<div class="controls">
-  <button id="refresh">Refresh</button>
-  <select id="theme">
-    <option value="system">System Theme</option>
-    <option value="light">Light</option>
-    <option value="dark">Dark</option>
-  </select>
-  <select id="hours">
-    <option value="24">Last 24h</option>
-    <option value="12">Last 12h</option>
-    <option value="6">Last 6h</option>
-    <option value="1">Last 1h</option>
-  </select>
-  <input type="date" id="date-picker">
+<div class="tabs">
+  <div class="tab active" data-tab="overview">Overview</div>
+  <div class="tab" data-tab="daily">Daily</div>
+  <div class="tab" data-tab="weekly">Weekly</div>
+  <div class="tab" data-tab="events">Events</div>
 </div>
 
-<div class="stats" id="daily-stats"></div>
+<!-- OVERVIEW TAB -->
+<div class="tab-content active" id="overview">
+  <div class="controls">
+    <button id="refresh">Refresh</button>
+    <select id="theme">
+      <option value="system">System Theme</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+    <select id="hours">
+      <option value="24">Last 24h</option>
+      <option value="12">Last 12h</option>
+      <option value="6">Last 6h</option>
+      <option value="1">Last 1h</option>
+    </select>
+  </div>
 
-<h3>Activity Periods</h3>
-<div class="period-nav">
-  <button id="prev-period">← Prev</button>
-  <span id="period-index">-</span>
-  <button id="next-period">Next →</button>
-</div>
-<div class="timeline" id="periods"></div>
+  <div class="stats" id="current-stats"></div>
 
-<div class="details" id="period-details">
-  <h4>Period Details</h4>
-  <div id="detail-content"></div>
+  <h3>Activity Periods</h3>
+  <div class="period-nav">
+    <button id="prev-period">← Prev</button>
+    <span id="period-index">-</span>
+    <button id="next-period">Next →</button>
+  </div>
+  <div id="periods"></div>
+
+  <div class="details" id="period-details">
+    <h4>Period Details</h4>
+    <div id="detail-content"></div>
+  </div>
 </div>
 
-<hr>
-<h3>Recent Events</h3>
-<div class="controls">
-  <input id="q" placeholder="search events"/>
-  <button id="search">Search</button>
+<!-- DAILY TAB -->
+<div class="tab-content" id="daily">
+  <div class="controls">
+    <input type="date" id="daily-date">
+    <button id="daily-prev">← Prev Day</button>
+    <button id="daily-next">Next Day →</button>
+  </div>
+
+  <div class="stats" id="daily-stats"></div>
+
+  <div class="chart">
+    <h3>Activity by Hour</h3>
+    <div class="bar-chart" id="hourly-chart"></div>
+  </div>
 </div>
-<div class="event-list" id="events"></div>
+
+<!-- WEEKLY TAB -->
+<div class="tab-content" id="weekly">
+  <div class="controls">
+    <button id="week-prev">← Prev Week</button>
+    <span id="week-label"></span>
+    <button id="week-next">Next Week →</button>
+  </div>
+
+  <div class="week-grid" id="week-grid"></div>
+
+  <div class="chart">
+    <h3>Weekly Activity</h3>
+    <div class="bar-chart" id="weekly-chart"></div>
+  </div>
+</div>
+
+<!-- EVENTS TAB -->
+<div class="tab-content" id="events">
+  <div class="controls">
+    <input id="event-search" placeholder="Search events..."/>
+    <button id="event-search-btn">Search</button>
+    <select id="event-limit">
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="200" selected>200</option>
+      <option value="500">500</option>
+    </select>
+  </div>
+  <div class="event-list" id="event-list"></div>
+</div>
 
 <script>
 const API = "/api";
 let periods = [];
 let selectedIndex = -1;
+let currentDate = new Date();
+let currentWeekStart = new Date();
 
 // Theme management
 function applyTheme(mode) {
@@ -144,22 +267,39 @@ document.getElementById("theme").onchange = e => {
   applyTheme(e.target.value);
 };
 
-// Format time duration
+// Tab switching
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(tab.dataset.tab).classList.add("active");
+
+    if (tab.dataset.tab === "daily") loadDailyView();
+    if (tab.dataset.tab === "weekly") loadWeeklyView();
+    if (tab.dataset.tab === "events") loadEventsList();
+  };
+});
+
+// Format helpers
 function formatDuration(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
   return `${s}s`;
 }
 
-// Format timestamp
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString();
 }
 
-// Load and display periods
+function formatDate(date) {
+  return date.toISOString().split('T')[0];
+}
+
+// OVERVIEW TAB
 async function loadPeriods() {
   const hours = document.getElementById("hours").value;
   const resp = await fetch(`${API}/periods?hours=${hours}`);
@@ -178,44 +318,50 @@ async function loadPeriods() {
     div.className = `period ${p.state}`;
     div.onclick = () => selectPeriod(idx);
 
-    const header = document.createElement("div");
-    header.className = "period-header";
-    header.innerHTML = `
-      <span>${p.state.toUpperCase()}</span>
-      <span>${formatDuration(p.duration_sec)}</span>
+    div.innerHTML = `
+      <div class="period-header">
+        <span>${p.state.toUpperCase()}</span>
+        <span>${formatDuration(p.duration_sec)}</span>
+      </div>
+      <div style="font-size:0.9em;opacity:0.8;">
+        ${formatTime(p.start)} → ${formatTime(p.end)}
+      </div>
     `;
-
-    const time = document.createElement("div");
-    time.style.fontSize = "0.9em";
-    time.style.opacity = "0.8";
-    time.innerText = `${formatTime(p.start)} → ${formatTime(p.end)}`;
-
-    div.appendChild(header);
-    div.appendChild(time);
     container.appendChild(div);
   });
 
-  // Auto-select most recent active period
+  // Update current stats
+  const now = new Date();
+  const activeTime = periods.filter(p => p.state === 'active').reduce((sum, p) => sum + p.duration_sec, 0);
+  const inactiveTime = periods.filter(p => p.state === 'inactive').reduce((sum, p) => sum + p.duration_sec, 0);
+
+  document.getElementById("current-stats").innerHTML = `
+    <div class="stat-box">
+      <h4>Active (${hours}h)</h4>
+      <p style="font-size:1.5em;margin:5px 0;">${formatDuration(activeTime)}</p>
+    </div>
+    <div class="stat-box">
+      <h4>Inactive (${hours}h)</h4>
+      <p style="font-size:1.5em;margin:5px 0;">${formatDuration(inactiveTime)}</p>
+    </div>
+  `;
+
   const lastActive = periods.findIndex(p => p.state === "active");
   if (lastActive >= 0) selectPeriod(lastActive);
 }
 
-// Select and show period details
 function selectPeriod(idx) {
   selectedIndex = idx;
   const p = periods[idx];
 
-  // Update selection visual
   document.querySelectorAll(".period").forEach((el, i) => {
     el.classList.toggle("selected", i === idx);
   });
 
-  // Update navigation
   document.getElementById("period-index").innerText = `Period ${idx + 1} / ${periods.length}`;
   document.getElementById("prev-period").disabled = idx === 0;
   document.getElementById("next-period").disabled = idx === periods.length - 1;
 
-  // Show details
   const details = document.getElementById("period-details");
   const content = document.getElementById("detail-content");
 
@@ -229,12 +375,17 @@ function selectPeriod(idx) {
   if (p.trigger_event) {
     html += `
       <p><strong>Triggered by:</strong> ${p.trigger_event.type}</p>
-      <p style="font-size:0.9em; opacity:0.8;">${p.trigger_event.timestamp}</p>
+      <p style="font-size:0.9em;opacity:0.8;">${p.trigger_event.timestamp}</p>
     `;
   }
 
   if (p.events && p.events.length > 0) {
-    html += `<h5>Events in this period (${p.events.length}):</h5><div class="event-list">`;
+    html += `
+      <button class="toggle-btn" onclick="togglePeriodEvents()">
+        Show Events (${p.events.length})
+      </button>
+      <div class="event-list hidden" id="period-events">
+    `;
     p.events.forEach(e => {
       html += `
         <div class="event-item">
@@ -250,7 +401,14 @@ function selectPeriod(idx) {
   details.classList.add("show");
 }
 
-// Period navigation
+function togglePeriodEvents() {
+  const el = document.getElementById("period-events");
+  el.classList.toggle("hidden");
+  event.target.textContent = el.classList.contains("hidden")
+    ? `Show Events (${periods[selectedIndex].events.length})`
+    : `Hide Events (${periods[selectedIndex].events.length})`;
+}
+
 document.getElementById("prev-period").onclick = () => {
   if (selectedIndex > 0) selectPeriod(selectedIndex - 1);
 };
@@ -259,20 +417,22 @@ document.getElementById("next-period").onclick = () => {
   if (selectedIndex < periods.length - 1) selectPeriod(selectedIndex + 1);
 };
 
-// Load daily stats
-async function loadDailyStats(date) {
-  const resp = await fetch(`${API}/stats/${date}`);
+// DAILY TAB
+async function loadDailyView() {
+  const dateStr = formatDate(currentDate);
+  document.getElementById("daily-date").value = dateStr;
+
+  const resp = await fetch(`${API}/stats/${dateStr}`);
   const stats = await resp.json();
 
-  const container = document.getElementById("daily-stats");
-  container.innerHTML = `
+  document.getElementById("daily-stats").innerHTML = `
     <div class="stat-box">
       <h4>Active Time</h4>
-      <p style="font-size:1.5em; margin:5px 0;">${formatDuration(stats.active_seconds)}</p>
+      <p style="font-size:1.5em;margin:5px 0;">${formatDuration(stats.active_seconds)}</p>
     </div>
     <div class="stat-box">
       <h4>Inactive Time</h4>
-      <p style="font-size:1.5em; margin:5px 0;">${formatDuration(stats.inactive_seconds)}</p>
+      <p style="font-size:1.5em;margin:5px 0;">${formatDuration(stats.inactive_seconds)}</p>
     </div>
     <div class="stat-box">
       <h4>Events</h4>
@@ -281,14 +441,143 @@ async function loadDailyStats(date) {
       ).join('')}
     </div>
   `;
+
+  // Load hourly breakdown
+  const hourlyResp = await fetch(`${API}/periods?hours=24`);
+  const allPeriods = await hourlyResp.json();
+
+  const hourlyData = new Array(24).fill(0);
+  allPeriods.forEach(p => {
+    if (p.state !== 'active') return;
+    const start = new Date(p.start);
+    const end = new Date(p.end);
+    if (start.toDateString() !== currentDate.toDateString()) return;
+
+    const startHour = start.getHours();
+    const endHour = end.getHours();
+
+    if (startHour === endHour) {
+      hourlyData[startHour] += p.duration_sec / 60;
+    } else {
+      hourlyData[startHour] += (60 - start.getMinutes());
+      for (let h = startHour + 1; h < endHour; h++) {
+        hourlyData[h] += 60;
+      }
+      hourlyData[endHour] += end.getMinutes();
+    }
+  });
+
+  const maxMinutes = Math.max(...hourlyData, 1);
+  const chart = document.getElementById("hourly-chart");
+  chart.innerHTML = '';
+
+  hourlyData.forEach((minutes, hour) => {
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    bar.style.height = `${(minutes / maxMinutes) * 100}%`;
+    bar.innerHTML = `
+      <div class="bar-value">${Math.round(minutes)}m</div>
+      <div class="bar-label">${hour}h</div>
+    `;
+    chart.appendChild(bar);
+  });
 }
 
-// Load events
-async function loadEvents(q) {
-  const resp = await fetch(`${API}/events?limit=50&offset=0${q ? "&q=" + encodeURIComponent(q) : ""}`);
+document.getElementById("daily-date").onchange = (e) => {
+  currentDate = new Date(e.target.value);
+  loadDailyView();
+};
+
+document.getElementById("daily-prev").onclick = () => {
+  currentDate.setDate(currentDate.getDate() - 1);
+  loadDailyView();
+};
+
+document.getElementById("daily-next").onclick = () => {
+  currentDate.setDate(currentDate.getDate() + 1);
+  loadDailyView();
+};
+
+// WEEKLY TAB
+async function loadWeeklyView() {
+  const weekStart = new Date(currentWeekStart);
+  // Monday start: adjust to previous Monday
+  const day = weekStart.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  weekStart.setDate(weekStart.getDate() + diff);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  document.getElementById("week-label").textContent =
+    `${formatDate(weekStart)} — ${formatDate(weekEnd)}`;
+
+  const grid = document.getElementById("week-grid");
+  grid.innerHTML = '';
+
+  const weeklyData = [];
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(weekStart);
+    day.setDate(day.getDate() + i);
+
+    const resp = await fetch(`${API}/stats/${formatDate(day)}`);
+    const stats = await resp.json();
+
+    const cell = document.createElement("div");
+    cell.className = "day-cell";
+    if (formatDate(day) === formatDate(new Date())) {
+      cell.classList.add("today");
+    }
+    cell.onclick = () => {
+      currentDate = day;
+      document.querySelector('[data-tab="daily"]').click();
+    };
+
+    cell.innerHTML = `
+      <strong>${days[i]}</strong><br>
+      ${day.getDate()}<br>
+      <small>${formatDuration(stats.active_seconds)}</small>
+    `;
+    grid.appendChild(cell);
+    weeklyData.push(stats.active_seconds / 60);
+  }
+
+  // Weekly chart
+  const maxMinutes = Math.max(...weeklyData, 1);
+  const chart = document.getElementById("weekly-chart");
+  chart.innerHTML = '';
+
+  weeklyData.forEach((minutes, i) => {
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    bar.style.height = `${(minutes / maxMinutes) * 100}%`;
+    bar.innerHTML = `
+      <div class="bar-value">${formatDuration(minutes * 60)}</div>
+      <div class="bar-label">${days[i]}</div>
+    `;
+    chart.appendChild(bar);
+  });
+}
+
+document.getElementById("week-prev").onclick = () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+  loadWeeklyView();
+};
+
+document.getElementById("week-next").onclick = () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  loadWeeklyView();
+};
+
+// EVENTS TAB
+async function loadEventsList(q = "") {
+  const limit = document.getElementById("event-limit").value;
+  const resp = await fetch(`${API}/events?limit=${limit}&offset=0${q ? "&q=" + encodeURIComponent(q) : ""}`);
   const events = await resp.json();
 
-  const container = document.getElementById("events");
+  const container = document.getElementById("event-list");
   container.innerHTML = "";
 
   events.forEach(e => {
@@ -302,32 +591,27 @@ async function loadEvents(q) {
   });
 }
 
-// Event handlers
-document.getElementById("refresh").onclick = () => {
-  loadPeriods();
-  loadEvents();
-  const date = document.getElementById("date-picker").value || new Date().toISOString().split('T')[0];
-  loadDailyStats(date);
+document.getElementById("event-search-btn").onclick = () => {
+  loadEventsList(document.getElementById("event-search").value);
 };
 
-document.getElementById("search").onclick = () => {
-  loadEvents(document.getElementById("q").value);
+document.getElementById("event-limit").onchange = () => {
+  loadEventsList(document.getElementById("event-search").value);
+};
+
+// Global refresh
+document.getElementById("refresh").onclick = () => {
+  loadPeriods();
 };
 
 document.getElementById("hours").onchange = loadPeriods;
 
-document.getElementById("date-picker").onchange = (e) => {
-  loadDailyStats(e.target.value);
-};
-
 // Initialize
 window.onload = () => {
   loadTheme();
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById("date-picker").value = today;
+  currentDate = new Date();
+  currentWeekStart = new Date();
   loadPeriods();
-  loadEvents();
-  loadDailyStats(today);
 };
 </script>
 </body>
