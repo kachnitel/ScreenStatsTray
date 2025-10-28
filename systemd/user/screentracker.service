@@ -1,6 +1,8 @@
 [Unit]
 Description=Screen activity tracker
+Requires=graphical-session.target
 After=graphical-session.target plasma-workspace.target
+Part_Of=graphical-session.target
 
 [Service]
 Type=simple
@@ -14,4 +16,4 @@ ExecStart=/bin/bash -c '\
 Restart=on-failure
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
