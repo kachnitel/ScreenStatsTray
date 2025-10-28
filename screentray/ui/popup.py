@@ -3,10 +3,11 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButt
 from PyQt5.QtGui import QPaintEvent
 from PyQt5.QtCore import QTimer
 import datetime
-from typing import List
+# from typing import List
 from .activity_bar import ActivityBar
 from ..services.stats_service import StatsService
 from ..services.session_service import SessionService
+from ..plugins import PluginManager
 
 
 class StatsPopup(QWidget):
@@ -23,6 +24,16 @@ class StatsPopup(QWidget):
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
+
+        # Initialize plugin manager and collect widgets
+        self.plugin_manager = PluginManager()
+        self.plugin_manager.discover_plugins()
+        self.plugin_widgets: List[QWidget] = []
+
+        for plugin in self.plugin_manager.plugins.values():
+            widget = plugin.get_popup_widget()
+            if widget:
+                self.plugin_widgets.append(widget)
 
         # --- Date Navigation ---
         self.date_layout = QHBoxLayout()
@@ -57,6 +68,12 @@ class StatsPopup(QWidget):
         self.inactive_label = QLabel("Inactive: ...")
         self.layout.addWidget(self.active_label)
         self.layout.addWidget(self.inactive_label)
+
+        # --- Plugin Widgets ---
+        if self.plugin_widgets:
+            self.layout.addWidget(QLabel("<b>Plugins:</b>"))
+            for widget in self.plugin_widgets:
+                self.layout.addWidget(widget)
 
         # --- Timer for updates ---
         self.timer = QTimer(self)
@@ -101,6 +118,11 @@ class StatsPopup(QWidget):
         totals = self.stats_service.get_daily_totals(day_str)
         self.active_label.setText(f"Active: {self._format_seconds(totals['active'])}")
         self.inactive_label.setText(f"Inactive: {self._format_seconds(totals['inactive'])}")
+
+        # Update plugin widgets
+        for widget in self.plugin_widgets:
+            if hasattr(widget, 'update_data'):
+                widget.update_data()
 
     def prev_day(self) -> None:
         """Go to the previous day."""

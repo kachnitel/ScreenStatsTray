@@ -3,6 +3,7 @@ set -e
 echo "Installing ScreenTrackerTray..."
 
 INSTALL_WEB_FLAG=false
+INSTALL_APPTRACK_FLAG=false
 DEV_MODE=false
 
 # Parse arguments
@@ -10,6 +11,9 @@ for arg in "$@"; do
     case "$arg" in
         --with-web|-w)
             INSTALL_WEB_FLAG=true
+            ;;
+        --with-app-tracker|-a)
+            INSTALL_APPTRACK_FLAG=true
             ;;
         --dev)
             DEV_MODE=true
@@ -20,39 +24,53 @@ done
 # Directories
 BIN="$HOME/.local/bin"
 LIB_ROOT="$HOME/.local/lib"
-LIB_PKG="$LIB_ROOT/screentray" # This is the full path to the package directory
+LIB_PKG="$LIB_ROOT/screentray"
 SYSTEMD_USER="$HOME/.config/systemd/user"
-SERVICE_SRC="./systemd/user" # Source directory for service files
+SERVICE_SRC="./systemd/user"
 
 mkdir -p "$BIN"
-mkdir -p "$LIB_ROOT" # Ensure LIB_ROOT exists
+mkdir -p "$LIB_ROOT"
 mkdir -p "$SYSTEMD_USER"
 
 # --- 1. Python Package Installation ---
 
 if [[ "$DEV_MODE" == true ]]; then
     echo "Dev mode: creating symlink for 'screentray' package..."
-
-    # **FIXED LOGIC:**
-    # 1. Remove the old directory or symlink first.
-    # 2. Create the symlink directly in LIB_ROOT.
     rm -rf "$LIB_PKG"
     ln -sfn "$(realpath screentray)" "$LIB_ROOT/screentray"
-
 else
     echo "Installing 'screentray' package to $LIB_PKG..."
-    # Ensure target is empty before copying
     rm -rf "$LIB_PKG"
     cp -r screentray "$LIB_ROOT/"
 fi
 
 # --- 2. Database Initialization ---
 echo "Initializing/updating SQLite database..."
-# Run this using the installed/symlinked package
 python3 -m screentray.db_init
 
-# --- 3. Wrapper Scripts ---
-# Simple wrappers to execute the module
+# --- 3. Plugin Installation ---
+echo "Checking for plugins..."
+
+# App tracker plugin
+if [[ "$INSTALL_APPTRACK_FLAG" == true ]]; then
+    INSTALL_APPTRACK="y"
+else
+    echo
+    read -p "Do you want to install the Application Tracker plugin? [y/N]: " INSTALL_APPTRACK
+fi
+
+if [[ "$INSTALL_APPTRACK" =~ ^[Yy]$ ]]; then
+    echo "Installing Application Tracker plugin..."
+    # Plugin installation is handled by the plugin system on first run
+    # Just create a marker file to indicate it should be enabled
+    mkdir -p "$HOME/.config/screentray"
+    echo "app_tracker" >> "$HOME/.config/screentray/enabled_plugins.txt"
+    echo "✅ Application Tracker plugin will be installed on first run"
+else
+    echo "Skipping Application Tracker plugin."
+fi
+
+# --- 4. Wrapper Scripts ---
 echo "Creating wrapper scripts in $BIN..."
 cat > "$BIN/screentracker" <<'EOF'
 #!/bin/bash
@@ -66,12 +84,11 @@ EOF
 
 chmod +x "$BIN/screentracker" "$BIN/screentray"
 
-# --- 4. Systemd Service Files (Tracker & Tray) ---
+# --- 5. Systemd Service Files (Tracker & Tray) ---
 echo "Installing core systemd service files..."
 for svc in screentracker screentray; do
     if [[ ! -f "$SERVICE_SRC/$svc.service" ]]; then
         echo "Error: systemd service file not found at $SERVICE_SRC/$svc.service"
-        echo "Please ensure all service files are correctly placed."
         exit 1
     fi
 
@@ -87,10 +104,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now screentracker.service
 systemctl --user enable --now screentray.service
 
-# Wait a moment
 sleep 1
 
-# Check if tray is running
 if pgrep -f "python3 -m screentray.main" > /dev/null; then
     echo "Tray icon is running."
 else
@@ -99,7 +114,7 @@ fi
 
 echo "Tracker logs to ~/.local/share/screentracker.db"
 
-# --- 5. Optional Web Interface ---
+# --- 6. Optional Web Interface ---
 if [[ "$INSTALL_WEB_FLAG" == true ]]; then
     INSTALL_WEB="y"
 else
@@ -114,11 +129,9 @@ if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
         echo "❌ Flask not found. Install with:"
         echo "  pip install flask"
         echo "Aborting web interface installation."
-        # We don't exit the script, just skip web install
     else
         echo "✅ Flask found."
 
-        # Copy or symlink systemd service file
         if [[ ! -f "$SERVICE_SRC/$WEB_SVC.service" ]]; then
             echo "Error: Web service file not found at $SERVICE_SRC/$WEB_SVC.service"
         else
@@ -128,7 +141,6 @@ if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
                 cp "$SERVICE_SRC/$WEB_SVC.service" "$SYSTEMD_USER/"
             fi
 
-            # Enable the service
             systemctl --user daemon-reload
             systemctl --user enable --now $WEB_SVC.service
 
