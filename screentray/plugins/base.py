@@ -4,7 +4,7 @@ screentray/plugins/base.py
 Base plugin interface that all plugins must implement.
 """
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from PyQt5.QtWidgets import QWidget
 
 
@@ -82,6 +82,22 @@ class PluginBase(ABC):
             Example: [("/api/plugin/data", self.api_data)]
         """
         return []
+
+    def get_web_content(self) -> Dict[str, Any]:
+        """
+        Return web UI content for injection into main interface.
+
+        Returns:
+            Dict with keys:
+                'slots': Dict mapping slot names to HTML content
+                       Available slots: 'overview_bottom', 'daily_bottom', 'weekly_bottom', 'events_bottom'
+                'javascript': JavaScript code to inject into page
+                'new_tab': Optional dict with 'id', 'title', and 'content' for a new tab
+        """
+        return {
+            'slots': {},
+            'javascript': '',
+        }
 
     # State awareness (plugins can override to react to state changes)
 

@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
 """
-ScreenTracker Web Interface with enhanced diagnostics.
+ScreenTracker Web Interface with plugin support.
 """
 
 from __future__ import annotations
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, Response
 import sqlite3, datetime, os, sys, traceback, socket
 from typing import Any, List
+
+# Import plugin system
+sys.path.insert(0, os.path.expanduser("~/.local/lib"))
+from screentray.plugins import PluginManager
 
 APP = Flask(__name__, static_folder=".", static_url_path="")
 DB_PATH = os.path.expanduser("~/.local/share/screentracker.db")
 
 INACTIVE_TYPES = ("idle_start", "screen_off")
 ACTIVE_TYPES = ("idle_end", "screen_on")
+
+# Initialize plugin system
+plugin_manager = PluginManager()
+plugin_manager.discover_plugins()
+
+# Register plugin routes
+for plugin in plugin_manager.plugins.values():
+    for route, handler in plugin.get_web_routes():
+        APP.add_url_rule(route, view_func=handler, methods=['GET', 'POST'])
+        print(f"Registered plugin route: {route}")
 
 # ---- Utilities ------------------------------------------------------------
 
@@ -265,8 +279,69 @@ def api_daily_stats(day_str: str) -> Any:
 
 
 @APP.route("/")
-def index() -> Any:
-    return send_file(os.path.join(os.path.dirname(__file__), "web_static_index.html"))
+def index() -> Response:
+    """Serve index.html with plugin content injected."""
+    index_path = os.path.join(os.path.dirname(__file__), "web_static_index.html")
+
+    with open(index_path, 'r') as f:
+        html = f.read()
+
+    # Collect plugin content
+    plugin_slots: dict[str, list[str]] = {}
+    plugin_js: list[str] = []
+    plugin_tabs: list[dict[str, Any]] = []
+
+    for plugin in plugin_manager.plugins.values():
+        try:
+            content = plugin.get_web_content()
+
+            # Collect slot content
+            for slot_name, slot_html in content.get('slots', {}).items():
+                if slot_name not in plugin_slots:
+                    plugin_slots[slot_name] = []
+                plugin_slots[slot_name].append(slot_html)
+
+            # Collect JavaScript
+            if content.get('javascript'):
+                plugin_js.append(content['javascript'])
+
+            # Collect new tabs
+            if content.get('new_tab'):
+                plugin_tabs.append(content['new_tab'])
+
+        except Exception as e:
+            print(f"Error loading plugin content: {e}")
+            traceback.print_exc()
+
+    # Inject slot content
+    for slot_name, slot_contents in plugin_slots.items():
+        slot_marker = f"<!-- CONTENT_SLOT: {slot_name} -->"
+        combined_html = '\n'.join(slot_contents)
+        html = html.replace(slot_marker, combined_html)
+
+    # Inject new tabs into navigation
+    if plugin_tabs:
+        tab_nav_html = ''
+        tab_content_html = ''
+
+        for tab in plugin_tabs:
+            tab_id = tab['id']
+            tab_title = tab['title']
+            tab_nav_html += f'<li><a href="#" role="button" data-tab="{tab_id}">{tab_title}</a></li>\n'
+            tab_content_html += f'<section class="tab-content" id="{tab_id}">\n{tab["content"]}\n</section>\n'
+
+        # Inject navigation items before closing </ul>
+        html = html.replace('</ul>\n</nav>', f'{tab_nav_html}</ul>\n</nav>')
+
+        # Inject content sections before closing </main>
+        html = html.replace('</main>', f'{tab_content_html}</main>')
+
+    # Inject JavaScript before closing </body>
+    if plugin_js:
+        combined_js = '\n\n'.join(plugin_js)
+        html = html.replace('</body>', f'<script>\n// Plugin JavaScript\n{combined_js}\n</script>\n</body>')
+
+    return Response(html, mimetype='text/html')
 
 
 # ---- Diagnostics / Startup ------------------------------------------------
@@ -288,6 +363,7 @@ def main() -> None:
     print(f"Python: {sys.executable}")
     print(f"Flask:  {APP.import_name}")
     print(f"DB path: {DB_PATH}")
+    print(f"Discovered {len(plugin_manager.plugins)} plugins")
 
     port = find_free_port()
     print(f"Starting server on http://127.0.0.1:{port} ...", flush=True)

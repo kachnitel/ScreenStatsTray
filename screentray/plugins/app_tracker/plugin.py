@@ -3,7 +3,7 @@ screentray/plugins/app_tracker/plugin.py
 
 Main plugin implementation for application tracking.
 """
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from PyQt5.QtWidgets import QWidget
 from ..base import PluginBase
 from . import PLUGIN_INFO
@@ -70,5 +70,31 @@ class AppTrackerPlugin(PluginBase):
         return AppUsageWidget()
 
     def get_web_routes(self) -> list[tuple[str, Any]]:
-        """Return Flask routes for web interface (to be implemented)."""
-        return []
+        """Return Flask routes for web interface."""
+        try:
+            from .web import AppTrackerWeb
+            web = AppTrackerWeb()
+            return web.get_routes()
+        except ImportError as e:
+            # Web dependencies not installed
+            print(f"Web integration not available: {e}")
+            return []
+        except Exception as e:
+            print(f"Error loading web routes: {e}")
+            return []
+
+    def get_web_content(self) -> Dict[str, Any]:
+        """Return web UI content for injection into main interface."""
+        try:
+            from .web import AppTrackerWeb
+            web = AppTrackerWeb()
+            return web.get_content()
+        except ImportError as e:
+            # Web dependencies not installed
+            print(f"Web integration not available: {e}")
+            return {'slots': {}, 'javascript': ''}
+        except Exception as e:
+            print(f"Error loading web content: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'slots': {}, 'javascript': ''}

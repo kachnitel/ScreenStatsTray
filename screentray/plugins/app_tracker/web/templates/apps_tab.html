@@ -1,0 +1,33 @@
+<div class="grid">
+  <select id="app-usage-period">
+    <option value="today">Today</option>
+    <option value="week">Last 7 Days</option>
+    <option value="month">Last 30 Days</option>
+  </select>
+  <input type="number" id="app-usage-limit" value="10" min="5" max="50" step="5"
+         style="max-width: 100px;" placeholder="Limit">
+</div>
+
+<article>
+  <h3>Application Usage</h3>
+  <div id="app-usage-table-container">
+    <table id="app-usage-table">
+      <thead>
+        <tr>
+          <th>Application</th>
+          <th>Time Spent</th>
+          <th>Percentage</th>
+        </tr>
+      </thead>
+      <tbody id="app-usage-tbody">
+        <tr><td colspan="3" style="color: var(--pico-muted-color);">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<article class="chart">
+  <h3>Usage Distribution</h3>
+  <div class="bar-chart" id="app-usage-chart" style="height: 300px;">
+  </div>
+</article>
