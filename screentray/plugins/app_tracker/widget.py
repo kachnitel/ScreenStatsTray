@@ -3,7 +3,8 @@ screentray/plugins/app_tracker/widget.py
 
 Qt widget for displaying app usage statistics in the tray popup.
 """
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
+import datetime
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QLayoutItem
 from .service import AppUsageService
 
 
@@ -11,23 +12,25 @@ class AppUsageWidget(QWidget):
     """
     Widget showing top applications by usage time.
 
-    Displays top 5 apps by default, expandable to show all.
-    Updates automatically when parent calls update_data().
+    This widget is now date-aware and receives the date to display
+    from its parent (StatsPopup) via the update_data method.
     """
 
     def __init__(self) -> None:
         super().__init__()
+        # Service methods are static, so we can call them directly
         self.service = AppUsageService()
         self.expanded = False
         self.limit_collapsed = 5  # Show 5 apps when collapsed
+        self.current_date = datetime.date.today()
 
         # Layout
         self.main_layout = QVBoxLayout()
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setContentsMargins(0, 5, 0, 0) # Added top margin
         self.setLayout(self.main_layout)
 
-        # Header
-        self.header = QLabel("<b>App Usage Today:</b>")
+        # Header (will be set by update_data)
+        self.header = QLabel("<b>App Usage:</b>")
         self.main_layout.addWidget(self.header)
 
         # App list container
@@ -42,22 +45,42 @@ class AppUsageWidget(QWidget):
         self.toggle_button.clicked.connect(self.toggle_expanded)
         self.main_layout.addWidget(self.toggle_button)
 
-        # Initial data load
-        self.update_data()
+        # Initial data load (will be triggered by parent)
+        # self.update_data(self.current_date) # No need, parent calls it
 
-    def update_data(self) -> None:
-        """Refresh app usage data and update display."""
-        # Get today's usage
-        usage = self.service.get_app_usage_today()
+    def update_data(self, date_to_show: datetime.date) -> None:
+        """
+        Refresh app usage data for the specified date.
+        This method is called by the parent StatsPopup.
+        """
+        self.current_date = date_to_show
+
+        # Update header to reflect the selected date
+        date_str = "Today" if date_to_show == datetime.date.today() else date_to_show.isoformat()
+        self.header.setText(f"<b>App Usage ({date_str}):</b>")
+
+        # Get usage for the specified day
+        now = datetime.datetime.now()
+        start_of_day = datetime.datetime.combine(date_to_show, datetime.time.min)
+
+        # If the date is today, only show data up to 'now'
+        if date_to_show == now.date():
+            end_of_day = now
+        else:
+            end_of_day = datetime.datetime.combine(date_to_show, datetime.time.max)
+
+        usage = self.service.get_app_usage_for_period(start_of_day, end_of_day)
 
         # Sort by time spent (descending)
         sorted_apps = sorted(usage.items(), key=lambda x: x[1], reverse=True)
 
         # Clear existing labels
         while self.app_list_layout.count():
-            child = self.app_list_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+            child: QLayoutItem | None = self.app_list_layout.takeAt(0)
+            if child:
+                w = child.widget()
+                if w:
+                    w.deleteLater()
 
         # Determine how many to show
         limit = len(sorted_apps) if self.expanded else self.limit_collapsed
@@ -65,7 +88,7 @@ class AppUsageWidget(QWidget):
 
         if not apps_to_show:
             # No data yet
-            no_data_label = QLabel("<i>No app usage recorded yet</i>")
+            no_data_label = QLabel(f"<i>No app usage recorded for {date_str}</i>")
             no_data_label.setStyleSheet("color: gray;")
             self.app_list_layout.addWidget(no_data_label)
             self.toggle_button.hide()
@@ -90,15 +113,12 @@ class AppUsageWidget(QWidget):
     def toggle_expanded(self) -> None:
         """Toggle between showing 5 apps and showing all apps."""
         self.expanded = not self.expanded
-        self.update_data()
+        # Re-run update with the same date
+        self.update_data(self.current_date)
 
     def _format_duration(self, seconds: float) -> str:
         """
         Format seconds into readable duration.
-
-        Examples:
-            65 seconds -> "1m 5s"
-            3661 seconds -> "1h 1m"
         """
         total_s = int(seconds)
         h = total_s // 3600
