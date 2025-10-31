@@ -4,8 +4,6 @@ screentray/plugins/app_tracker/widget.py
 Qt widget for displaying app usage statistics in the tray popup.
 """
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
-from PyQt5.QtCore import Qt
-from typing import List, Tuple
 from .service import AppUsageService
 
 
@@ -24,25 +22,25 @@ class AppUsageWidget(QWidget):
         self.limit_collapsed = 5  # Show 5 apps when collapsed
 
         # Layout
-        self.layout = QVBoxLayout()
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.setLayout(self.layout)
+        self.main_layout = QVBoxLayout()
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(self.main_layout)
 
         # Header
         self.header = QLabel("<b>App Usage Today:</b>")
-        self.layout.addWidget(self.header)
+        self.main_layout.addWidget(self.header)
 
         # App list container
         self.app_list_widget = QWidget()
         self.app_list_layout = QVBoxLayout()
         self.app_list_layout.setContentsMargins(10, 0, 0, 0)
         self.app_list_widget.setLayout(self.app_list_layout)
-        self.layout.addWidget(self.app_list_widget)
+        self.main_layout.addWidget(self.app_list_widget)
 
         # Expand/collapse button
         self.toggle_button = QPushButton("Show More")
         self.toggle_button.clicked.connect(self.toggle_expanded)
-        self.layout.addWidget(self.toggle_button)
+        self.main_layout.addWidget(self.toggle_button)
 
         # Initial data load
         self.update_data()

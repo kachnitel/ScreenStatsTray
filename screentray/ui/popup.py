@@ -1,6 +1,6 @@
 """Statistics popup window."""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton
-from PyQt5.QtGui import QPaintEvent
+from PyQt5.QtGui import QShowEvent
 from PyQt5.QtCore import QTimer
 import datetime
 # from typing import List
@@ -22,13 +22,13 @@ class StatsPopup(QWidget):
         self.setWindowTitle("ScreenTray Statistics")
         self.setMinimumWidth(300)
 
-        self.layout = QVBoxLayout()
-        self.setLayout(self.layout)
+        self.main_layout = QVBoxLayout()
+        self.setLayout(self.main_layout)
 
         # Initialize plugin manager and collect widgets
         self.plugin_manager = PluginManager()
         self.plugin_manager.discover_plugins()
-        self.plugin_widgets: List[QWidget] = []
+        self.plugin_widgets: list[QWidget] = []
 
         for plugin in self.plugin_manager.plugins.values():
             widget = plugin.get_popup_widget()
@@ -48,32 +48,32 @@ class StatsPopup(QWidget):
         self.date_layout.addWidget(self.date_label)
         self.date_layout.addStretch()
         self.date_layout.addWidget(self.next_button)
-        self.layout.addLayout(self.date_layout)
+        self.main_layout.addLayout(self.date_layout)
 
         # --- 24h Activity Bar ---
-        self.layout.addWidget(QLabel("<b>Last 24h Activity:</b>"))
+        self.main_layout.addWidget(QLabel("<b>Last 24h Activity:</b>"))
         self.activity_bar = ActivityBar()
-        self.layout.addWidget(self.activity_bar)
+        self.main_layout.addWidget(self.activity_bar)
 
         # --- Current Session Stats ---
-        self.layout.addWidget(QLabel("<b>Current Status:</b>"))
+        self.main_layout.addWidget(QLabel("<b>Current Status:</b>"))
         self.session_label = QLabel("Session: ...")
         self.break_label = QLabel("Last Break: ...")
-        self.layout.addWidget(self.session_label)
-        self.layout.addWidget(self.break_label)
+        self.main_layout.addWidget(self.session_label)
+        self.main_layout.addWidget(self.break_label)
 
         # --- Daily Stats ---
-        self.layout.addWidget(QLabel("<b>Daily Totals:</b>"))
+        self.main_layout.addWidget(QLabel("<b>Daily Totals:</b>"))
         self.active_label = QLabel("Active: ...")
         self.inactive_label = QLabel("Inactive: ...")
-        self.layout.addWidget(self.active_label)
-        self.layout.addWidget(self.inactive_label)
+        self.main_layout.addWidget(self.active_label)
+        self.main_layout.addWidget(self.inactive_label)
 
         # --- Plugin Widgets ---
         if self.plugin_widgets:
-            self.layout.addWidget(QLabel("<b>Plugins:</b>"))
+            self.main_layout.addWidget(QLabel("<b>Plugins:</b>"))
             for widget in self.plugin_widgets:
-                self.layout.addWidget(widget)
+                self.main_layout.addWidget(widget)
 
         # --- Timer for updates ---
         self.timer = QTimer(self)
@@ -94,8 +94,8 @@ class StatsPopup(QWidget):
         is_active = self.session_service.is_currently_active()
 
         if is_active:
-            session_start, session_s = self.session_service.get_current_session()
-            break_start, break_end, break_s = self.session_service.get_last_break()
+            _, session_s = self.session_service.get_current_session()
+            _, break_end, break_s = self.session_service.get_last_break()
 
             self.session_label.setText(f"Session: {self._format_seconds(session_s)}")
 
@@ -104,7 +104,7 @@ class StatsPopup(QWidget):
             else:
                 self.break_label.setText("Last Break: (no recent break)")
         else:
-            break_start, break_end, break_s = self.session_service.get_last_break()
+            _, break_end, break_s = self.session_service.get_last_break()
 
             if break_end is None:
                 self.session_label.setText("Session: Idle")
@@ -122,7 +122,7 @@ class StatsPopup(QWidget):
         # Update plugin widgets
         for widget in self.plugin_widgets:
             if hasattr(widget, 'update_data'):
-                widget.update_data()
+                widget.update_data() # pyright: ignore[reportUnknownMemberType]
 
     def prev_day(self) -> None:
         """Go to the previous day."""
@@ -148,7 +148,7 @@ class StatsPopup(QWidget):
         else:
             return f"{s}s"
 
-    def showEvent(self, event: QPaintEvent) -> None:
+    def showEvent(self, a0: QShowEvent|None) -> None:
         """Trigger update when window is shown."""
         self.update_stats()
-        super().showEvent(event)
+        super().showEvent(a0)
