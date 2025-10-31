@@ -20,12 +20,18 @@ class AppUsageService:
         Calculate time spent in each application during a period.
 
         Args:
-            start: Period start time
-            end: Period end time
+            start: Period start time (timezone-aware or naive)
+            end: Period end time (timezone-aware or naive)
 
         Returns:
             Dict mapping app_name to seconds spent
         """
+        # Strip timezone info to match database timestamps (which are naive)
+        if start.tzinfo is not None:
+            start = start.replace(tzinfo=None)
+        if end.tzinfo is not None:
+            end = end.replace(tzinfo=None)
+
         with get_cursor() as cur:
             cur.execute("""
                 SELECT app_name, timestamp, event_type

@@ -42,8 +42,16 @@ class AppUsageRoutes:
                 return jsonify({"error": "Missing start or end parameter"}), 400
 
             try:
-                start = datetime.datetime.fromisoformat(start_str)
-                end = datetime.datetime.fromisoformat(end_str)
+                # Parse ISO format (may include timezone)
+                start = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00'))
+                end = datetime.datetime.fromisoformat(end_str.replace('Z', '+00:00'))
+
+                # Convert to naive datetimes (strip timezone) to match DB
+                if start.tzinfo is not None:
+                    start = start.replace(tzinfo=None)
+                if end.tzinfo is not None:
+                    end = end.replace(tzinfo=None)
+
             except ValueError:
                 return jsonify({"error": "Invalid date format"}), 400
 
