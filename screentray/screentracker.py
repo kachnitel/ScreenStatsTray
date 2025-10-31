@@ -64,8 +64,24 @@ def main() -> None:
             else:
                 new_state = "inactive"
 
+            if current_state == "unknown":
+                current_state = new_state # Establish initial state
+
+                # If we start active, notify plugins immediately and record initial poll data
+                if new_state == "active":
+                    plugin_manager.notify_active()
+                    # Record a poll event right away for better logging
+                    detail = f"state={new_state} idle={idle_sec:.0f}s screen={'on' if screen_on else 'off'}"
+                    repo.insert("poll", detail)
+                    print(f"[{now.isoformat(timespec='seconds')}] poll (initial): {detail}")
+                    last_poll_log = now
+
+                # Wait for the next loop iteration
+                time.sleep(LOG_INTERVAL)
+                continue
+
             # Log state transitions
-            if new_state != current_state and current_state != "unknown":
+            if new_state != current_state:
                 if new_state == "active":
                     # Became active
                     repo.insert("idle_end", f"idle was {idle_sec:.0f}s")
