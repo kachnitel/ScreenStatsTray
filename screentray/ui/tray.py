@@ -87,8 +87,8 @@ class TrayApp:
 
         if is_active:
             # Currently active - show session time
-            session_start, session_s = self.session_service.get_current_session()
-            break_start, break_end, break_s = self.session_service.get_last_break()
+            _, session_s = self.session_service.get_current_session()
+            _, break_end, break_s = self.session_service.get_last_break()
 
             session_m = session_s / 60.0
             tooltip = f"Active: {int(session_m)}m"
@@ -107,7 +107,7 @@ class TrayApp:
                 self.notified_threshold = False
         else:
             # Currently inactive - show break time
-            break_start, break_end, break_s = self.session_service.get_last_break()
+            _, break_end, break_s = self.session_service.get_last_break()
 
             if break_end is None:
                 # Still in break
