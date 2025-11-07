@@ -14,4 +14,14 @@ NOTIFY_BUTTONS = {
     "suspend": True,
     "screen_off": True,
     "lock_screen": True,
+    "snooze": True,
 }
+
+# Snooze duration in minutes
+SNOOZE_MINUTES: int = 10
+
+# Debug mode - logs detailed tracking information
+DEBUG_MODE: bool = os.environ.get("SCREENTRACKER_DEBUG", "0") == "1"
+
+# Debug log file
+DEBUG_LOG_PATH: str = os.path.expanduser("~/.local/share/screentracker_debug.log")
