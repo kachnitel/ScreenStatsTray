@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QTabWidget
 )
 from PyQt5.QtGui import QShowEvent
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt, QEvent
 import datetime
 from typing import List
 from .activity_bar import ActivityBar
@@ -13,7 +13,13 @@ from ..plugins import PluginManager
 
 
 class StatsPopup(QWidget):
-    """Main statistics popup window, reorganized with tabs."""
+    """
+    Statistics popup widget with native tray popup behavior.
+
+    Displays activity statistics in a compact, tray-anchored window
+    that automatically hides when focus is lost, mimicking KDE's
+    native tray popups like network manager.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -21,15 +27,22 @@ class StatsPopup(QWidget):
         self.stats_service = StatsService()
         self.session_service = SessionService()
 
+        # Configure as native popup window
         self.setWindowTitle("ScreenTray Statistics")
+        self.setWindowFlags(
+            Qt.Popup |  # Popup window that auto-hides on focus loss # pyright: ignore[reportAttributeAccessIssue,reportUnknownArgumentType,reportUnknownMemberType]
+            Qt.FramelessWindowHint  # No window decorations # pyright: ignore[reportUnknownArgumentType,reportAttributeAccessIssue,reportUnknownMemberType]
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, False) # pyright: ignore[reportAttributeAccessIssue, reportUnknownArgumentType, reportUnknownMemberType]
+
+        # Set reasonable size constraints
         self.setMinimumWidth(320)
+        self.setMaximumWidth(450)
+        self.setMaximumHeight(600)
 
         self.main_layout = QVBoxLayout()
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.setLayout(self.main_layout)
-
-        # --- Tabbed Interface ---
-        self.tab_widget = QTabWidget()
-        self.main_layout.addWidget(self.tab_widget)
 
         # Initialize plugin manager and collect widgets
         self.plugin_manager = PluginManager()
@@ -41,25 +54,28 @@ class StatsPopup(QWidget):
             if widget:
                 self.plugin_widgets.append(widget)
 
-        # --- Create Tabs ---
+        # Create tabbed interface
+        self.tab_widget = QTabWidget()
+        self.main_layout.addWidget(self.tab_widget)
+
         self.create_now_tab()
         self.create_daily_tab()
 
-        # --- Timer for updates ---
+        # Update timer
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_all_stats)
-        self.timer.start(5000)  # Update every 5 seconds
+        self.timer.start(5000)
 
         self.update_all_stats()
 
     def create_now_tab(self) -> None:
-        """Creates the 'Now' tab with live session and 24h data."""
+        """Create the 'Now' tab showing live session and 24h activity."""
         now_tab = QWidget()
         now_layout = QVBoxLayout()
         now_layout.setContentsMargins(5, 10, 5, 5)
         now_tab.setLayout(now_layout)
 
-        # --- Current Session Stats ---
+        # Current session stats
         now_layout.addWidget(QLabel("<b>Current Status:</b>"))
         self.session_label = QLabel("Session: ...")
         self.break_label = QLabel("Last Break: ...")
@@ -68,7 +84,7 @@ class StatsPopup(QWidget):
 
         now_layout.addSpacing(15)
 
-        # --- 24h Activity Bar ---
+        # 24h activity bar
         now_layout.addWidget(QLabel("<b>Last 24h Activity:</b>"))
         self.activity_bar = ActivityBar()
         now_layout.addWidget(self.activity_bar)
@@ -77,13 +93,13 @@ class StatsPopup(QWidget):
         self.tab_widget.addTab(now_tab, "Now")
 
     def create_daily_tab(self) -> None:
-        """Creates the 'Daily Stats' tab with historical data."""
+        """Create the 'Daily Stats' tab with historical data."""
         daily_tab = QWidget()
         daily_layout = QVBoxLayout()
         daily_layout.setContentsMargins(5, 10, 5, 5)
         daily_tab.setLayout(daily_layout)
 
-        # --- Date Navigation ---
+        # Date navigation
         self.date_layout = QHBoxLayout()
         self.prev_button = QPushButton("< Prev")
         self.prev_button.clicked.connect(self.prev_day)
@@ -98,17 +114,16 @@ class StatsPopup(QWidget):
 
         daily_layout.addSpacing(15)
 
-        # --- Daily Stats ---
+        # Daily totals
         daily_layout.addWidget(QLabel("<b>Daily Totals:</b>"))
         self.active_label = QLabel("Active: ...")
         self.inactive_label = QLabel("Inactive: ...")
         daily_layout.addWidget(self.active_label)
         daily_layout.addWidget(self.inactive_label)
 
-        # --- Plugin Widgets ---
+        # Plugin widgets
         if self.plugin_widgets:
             daily_layout.addSpacing(15)
-            # Add plugins, which will now also be date-aware
             for widget in self.plugin_widgets:
                 daily_layout.addWidget(widget)
 
@@ -116,16 +131,14 @@ class StatsPopup(QWidget):
         self.tab_widget.addTab(daily_tab, "Daily Stats")
 
     def update_all_stats(self) -> None:
-        """Update all stats on both tabs."""
+        """Update statistics for all tabs."""
         self.update_live_stats()
         self.update_historical_stats()
 
     def update_live_stats(self) -> None:
-        """Reloads only the 'Now' tab data (session and 24h bar)."""
-        # Update 24h bar
+        """Update live statistics on the 'Now' tab."""
         self.activity_bar.update_data()
 
-        # Update current session/break
         is_active = self.session_service.is_currently_active()
 
         if is_active:
@@ -148,35 +161,41 @@ class StatsPopup(QWidget):
                 self.break_label.setText(f"Last Break: {self._format_seconds(break_s)}")
 
     def update_historical_stats(self) -> None:
-        """Reloads only the 'Daily Stats' tab data (totals and plugins)."""
+        """Update historical statistics on the 'Daily Stats' tab."""
         self.date_label.setText(f"<b>{self.date.isoformat()}</b>")
         self.next_button.setEnabled(self.date < datetime.date.today())
 
-        # Update daily totals
         day_str = self.date.isoformat()
         totals = self.stats_service.get_daily_totals(day_str)
         self.active_label.setText(f"Active: {self._format_seconds(totals['active'])}")
         self.inactive_label.setText(f"Inactive: {self._format_seconds(totals['inactive'])}")
 
-        # Update plugin widgets, passing the selected date
+        # Update plugin widgets with selected date
         for widget in self.plugin_widgets:
             if hasattr(widget, 'update_data'):
-                # Pass the selected date to the plugin widget
                 widget.update_data(self.date) # pyright: ignore[reportUnknownMemberType]
 
     def prev_day(self) -> None:
-        """Go to the previous day and update historical tab."""
+        """Navigate to previous day."""
         self.date -= datetime.timedelta(days=1)
         self.update_historical_stats()
 
     def next_day(self) -> None:
-        """Go to the next day and update historical tab."""
+        """Navigate to next day."""
         if self.date < datetime.date.today():
             self.date += datetime.timedelta(days=1)
             self.update_historical_stats()
 
     def _format_seconds(self, seconds: float) -> str:
-        """Format seconds into H:M:S string."""
+        """
+        Format seconds into human-readable duration.
+
+        Args:
+            seconds: Duration in seconds
+
+        Returns:
+            Formatted string (e.g., "2h 15m 30s", "45m 12s", "23s")
+        """
         total_s = int(seconds)
         h = total_s // 3600
         m = (total_s % 3600) // 60
@@ -189,9 +208,27 @@ class StatsPopup(QWidget):
             return f"{s}s"
 
     def showEvent(self, a0: QShowEvent | None) -> None:
-        """Trigger update when window is shown."""
-        # Reset to today's date when shown
+        """
+        Handle popup display event.
+
+        Resets to today's date and refreshes all statistics
+        when the popup is shown.
+        """
         self.date = datetime.date.today()
-        # Update all data
         self.update_all_stats()
         super().showEvent(a0)
+
+    def event(self, a0: QEvent|None) -> bool:
+        """
+        Handle window events.
+
+        Specifically handles WindowDeactivate to hide the popup
+        when it loses focus, matching native KDE popup behavior.
+        """
+        if a0 == None:
+            return super().event(a0)
+
+        if a0.type() == QEvent.WindowDeactivate: # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            # Auto-hide when focus is lost (native popup behavior)
+            self.hide()
+        return super().event(a0)

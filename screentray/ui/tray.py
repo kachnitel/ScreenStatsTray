@@ -2,7 +2,7 @@
 import subprocess
 from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
 from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import QTimer, Qt, QRect
 from .popup import StatsPopup
 from ..services.session_service import SessionService
 from ..config import ALERT_SESSION_MINUTES, NOTIFY_BUTTONS
@@ -63,16 +63,50 @@ class TrayApp:
         self.tray_icon.show()
 
     def show_popup(self) -> None:
-        """Show the statistics popup window."""
+        """Show popup near cursor as fallback for tray positioning."""
+        # Try to get tray geometry
+        tray_geometry: QRect = self.tray_icon.geometry()
+
+        if tray_geometry.isValid() and not tray_geometry.isNull():
+            # Position near tray icon
+            self.popup.adjustSize()
+            popup_size = self.popup.size()
+
+            x = tray_geometry.center().x() - popup_size.width() // 2
+            y = tray_geometry.top() - popup_size.height() - 5
+
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_geometry = screen.availableGeometry()
+                if y < screen_geometry.top():
+                    y = tray_geometry.bottom() + 5
+                if x < screen_geometry.left():
+                    x = screen_geometry.left() + 5
+                elif x + popup_size.width() > screen_geometry.right():
+                    x = screen_geometry.right() - popup_size.width() - 5
+        else:
+            # Fallback: show near cursor (common for KDE)
+            cursor_pos = QCursor.pos()
+            self.popup.adjustSize()
+            x = cursor_pos.x() - self.popup.width() // 2
+            y = cursor_pos.y() - self.popup.height() - 10
+
+        self.popup.move(x, y)
         self.popup.show()
         self.popup.activateWindow()
+        self.popup.raise_()
 
     def hide_popup(self) -> None:
         """Hide the statistics popup window."""
         self.popup.hide()
 
     def on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        """Handle tray icon click: toggle on left-click, show menu on right-click."""
+        """
+        Handle tray icon interactions.
+
+        Left-click: Toggle popup visibility
+        Right-click: Show context menu
+        """
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             if self.popup.isVisible():
                 self.hide_popup()
@@ -82,7 +116,14 @@ class TrayApp:
             self.menu.exec_(QCursor.pos()) # pyright: ignore[reportUnknownMemberType]
 
     def update_status(self) -> None:
-        """Update tray icon and tooltip based on activity."""
+        """
+        Update tray icon appearance and tooltip based on current activity state.
+
+        Updates every 2 seconds via timer to reflect:
+        - Active session duration
+        - Idle/break duration
+        - Alert state when session exceeds threshold
+        """
         is_active = self.session_service.is_currently_active()
 
         if is_active:
@@ -121,7 +162,15 @@ class TrayApp:
         self.tray_icon.setToolTip(tooltip)
 
     def _create_icon(self, color_name: str) -> QIcon:
-        """Create a 16x16 colored circular icon."""
+        """
+        Create a simple colored circular icon.
+
+        Args:
+            color_name: Qt color name (e.g., "green", "gray", "red")
+
+        Returns:
+            QIcon suitable for system tray display
+        """
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.transparent) # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType, reportAttributeAccessIssue]
         painter = QPainter(pixmap)
@@ -133,22 +182,25 @@ class TrayApp:
         return QIcon(pixmap)
 
     def notify_threshold(self) -> None:
-        """Show a desktop notification when threshold exceeded."""
+        """Show a desktop notification when session threshold is exceeded."""
         title = "ScreenTracker Alert"
         message = f"Session exceeded {ALERT_SESSION_MINUTES} minutes!"
         self.tray_icon.showMessage(title, message, QIcon.fromTheme(ICON_ALERT))
 
     def system_suspend(self) -> None:
+        """Suspend the system."""
         subprocess.run(["systemctl", "suspend"], check=False)
 
     def screen_off(self) -> None:
+        """Turn off the screen display."""
         subprocess.run(["xset", "dpms", "force", "off"], check=False)
 
     def lock_screen(self) -> None:
+        """Lock the current session."""
         subprocess.run(["loginctl", "lock-session"], check=False)
 
     def quit_app(self) -> None:
-        """Quit the application."""
+        """Clean up and exit the application."""
         self.tray_icon.hide()
         app_instance = QApplication.instance()
         if app_instance:
