@@ -155,7 +155,6 @@ function selectPeriod(idx) {
       <div class="event-list hidden" id="period-events">
     `;
     p.events.forEach(e => {
-      // Using a standard div with inline style to prevent Pico from styling it as an <article>
       html += `
         <div style="border-left: 3px solid var(--primary); padding: 5px; margin: 3px 0; font-family: monospace; font-size: 0.9em; background-color: var(--background-color);">
           <strong>${e.type}</strong> @ ${formatTime(e.timestamp)}
@@ -167,7 +166,7 @@ function selectPeriod(idx) {
   }
 
   content.innerHTML = html;
-  details.style.display = "block"; // Show the article
+  details.style.display = "block";
 }
 
 function togglePeriodEvents(event) {
@@ -203,32 +202,59 @@ async function loadDailyView() {
     </article>
   `;
 
-  // Load hourly breakdown
-  const hourlyResp = await fetch(`${API}/periods?hours=24`);
+  // Load hourly breakdown - fetch periods for the entire selected day
+  const startOfDay = new Date(currentDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(currentDate);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  // Calculate hours span for API call
+  const now = new Date();
+  const hoursFromNow = Math.ceil((now - startOfDay) / (1000 * 60 * 60));
+
+  const hourlyResp = await fetch(`${API}/periods?hours=${Math.max(hoursFromNow, 24)}`);
   const allPeriods = await hourlyResp.json();
 
   const hourlyData = new Array(24).fill(0);
+
   allPeriods.forEach(p => {
     if (p.state !== 'active') return;
+
     const start = new Date(p.start);
     const end = new Date(p.end);
-    if (start.toDateString() !== currentDate.toDateString()) return;
 
-    const startHour = start.getHours();
-    const endHour = end.getHours();
+    // Only process periods that overlap with the selected day
+    if (start.toDateString() !== currentDate.toDateString() &&
+        end.toDateString() !== currentDate.toDateString()) return;
 
-    // Logic for distributing period duration across hours
+    // Clamp to day boundaries
+    const dayStart = new Date(currentDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(currentDate);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const periodStart = start < dayStart ? dayStart : start;
+    const periodEnd = end > dayEnd ? dayEnd : end;
+
+    if (periodStart >= periodEnd) return;
+
+    const startHour = periodStart.getHours();
+    const endHour = periodEnd.getHours();
+    const startMinute = periodStart.getMinutes();
+    const endMinute = periodEnd.getMinutes();
+
     if (startHour === endHour) {
-      hourlyData[startHour] += p.duration_sec / 60;
+      // Period within single hour
+      hourlyData[startHour] += (endMinute - startMinute);
     } else {
       // Time in the start hour
-      hourlyData[startHour] += (60 - start.getMinutes());
+      hourlyData[startHour] += (60 - startMinute);
       // Full hours between start and end
       for (let h = startHour + 1; h < endHour; h++) {
         hourlyData[h] += 60;
       }
       // Time in the end hour
-      hourlyData[endHour] += end.getMinutes();
+      hourlyData[endHour] += endMinute;
     }
   });
 
@@ -348,7 +374,6 @@ async function loadEventsList(q = "") {
 
   events.forEach(e => {
     const div = document.createElement("div");
-    // Use an article for event items to get Pico's card styling
     div.innerHTML = `
       <article style="padding: 10px; margin-bottom: 5px; font-family: monospace; font-size: 0.9em;">
         <strong>${e.type}</strong> @ ${e.timestamp}
