@@ -1,16 +1,19 @@
 """Main system tray application."""
 import subprocess
 import datetime
-from typing import Optional
+import os
+from typing import Optional, List, Tuple, Callable, Dict
 from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
 from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor
-from PyQt5.QtCore import QTimer, Qt, QRect
+from PyQt5.QtCore import QTimer, Qt
 from .popup import StatsPopup
 from ..services.session_service import SessionService
 from ..config import ALERT_SESSION_MINUTES, NOTIFY_BUTTONS, SNOOZE_MINUTES
 
 ICON_NORMAL = "preferences-desktop"
 ICON_ALERT = "chronometer-pause-symbolic"
+TEST_NOTIFICATION_TRIGGER = os.path.expanduser("~/.local/share/screentracker_test_notify")
+
 
 class TrayApp:
     """Main application class for the system tray icon."""
@@ -20,15 +23,16 @@ class TrayApp:
         self.popup: StatsPopup = StatsPopup()
         self.notified_threshold = False
         self.snooze_until: Optional[datetime.datetime] = None
+        self._dbus_signal_handler: Optional[Callable[[int, str], None]] = None
 
         # Create tray icon
         self.tray_icon = QSystemTrayIcon(QIcon.fromTheme(ICON_NORMAL))
         self.tray_icon.setToolTip("ScreenTray")
 
-        # Context menu - always create it
+        # Context menu - NO snooze here
         self.create_context_menu()
 
-        # Connect notification message clicked signal
+        # Connect notification message clicked signal (fallback)
         self.tray_icon.messageClicked.connect(self.on_notification_clicked)  # pyright: ignore[reportGeneralTypeIssues]
 
         # Connect tray activation
@@ -44,10 +48,10 @@ class TrayApp:
         self.tray_icon.show()
 
     def create_context_menu(self) -> None:
-        """Create the context menu with all actions."""
+        """Create the context menu with all actions EXCEPT snooze."""
         self.menu = QMenu()
 
-        # Quick Actions submenu
+        # Quick Actions submenu (NO snooze)
         actions_menu = QMenu("Quick Actions", self.menu)
         actions_added = False
 
@@ -66,11 +70,6 @@ class TrayApp:
             lock_action.triggered.connect(self.lock_screen)
             actions_added = True
 
-        if NOTIFY_BUTTONS.get("snooze", False):
-            snooze_action: QAction = actions_menu.addAction(f"Snooze {SNOOZE_MINUTES}m")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            snooze_action.triggered.connect(self.snooze_notification)
-            actions_added = True
-
         # Only add submenu if it has actions
         if actions_added:
             self.menu.addMenu(actions_menu)
@@ -84,50 +83,16 @@ class TrayApp:
         self.tray_icon.setContextMenu(self.menu)
 
     def show_popup(self) -> None:
-        """Show popup near cursor as fallback for tray positioning."""
-        # Try to get tray geometry
-        tray_geometry: QRect = self.tray_icon.geometry()
-
-        if tray_geometry.isValid() and not tray_geometry.isNull():
-            # Position near tray icon
-            self.popup.adjustSize()
-            popup_size = self.popup.size()
-
-            x = tray_geometry.center().x() - popup_size.width() // 2
-            y = tray_geometry.top() - popup_size.height() - 5
-
-            screen = QApplication.primaryScreen()
-            if screen:
-                screen_geometry = screen.availableGeometry()
-                if y < screen_geometry.top():
-                    y = tray_geometry.bottom() + 5
-                if x < screen_geometry.left():
-                    x = screen_geometry.left() + 5
-                elif x + popup_size.width() > screen_geometry.right():
-                    x = screen_geometry.right() - popup_size.width() - 5
-        else:
-            # Fallback: show near cursor (common for KDE)
-            cursor_pos = QCursor.pos()
-            self.popup.adjustSize()
-            x = cursor_pos.x() - self.popup.width() // 2
-            y = cursor_pos.y() - self.popup.height() - 10
-
-        self.popup.move(x, y)
+        """Show the statistics popup window."""
         self.popup.show()
         self.popup.activateWindow()
-        self.popup.raise_()
 
     def hide_popup(self) -> None:
         """Hide the statistics popup window."""
         self.popup.hide()
 
     def on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        """
-        Handle tray icon interactions.
-
-        Left-click: Toggle popup visibility
-        Right-click: Show context menu
-        """
+        """Handle tray icon click: toggle on left-click, show menu on right-click."""
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             if self.popup.isVisible():
                 self.hide_popup()
@@ -138,19 +103,17 @@ class TrayApp:
             self.menu.popup(QCursor.pos())
 
     def on_notification_clicked(self) -> None:
-        """Handle notification click - show actions menu."""
-        # Show the quick actions menu when notification is clicked
+        """Handle notification click - show actions menu (fallback if DBus actions don't work)."""
         self.menu.popup(QCursor.pos())
 
     def update_status(self) -> None:
-        """
-        Update tray icon appearance and tooltip based on current activity state.
+        """Update tray icon and tooltip based on activity."""
+        # Check for test notification trigger
+        if os.path.exists(TEST_NOTIFICATION_TRIGGER):
+            os.remove(TEST_NOTIFICATION_TRIGGER)
+            self.send_test_notification()
+            return
 
-        Updates every 2 seconds via timer to reflect:
-        - Active session duration
-        - Idle/break duration
-        - Alert state when session exceeds threshold
-        """
         is_active = self.session_service.is_currently_active()
 
         if is_active:
@@ -207,15 +170,7 @@ class TrayApp:
         self.tray_icon.setToolTip(tooltip)
 
     def _create_icon(self, color_name: str) -> QIcon:
-        """
-        Create a simple colored circular icon.
-
-        Args:
-            color_name: Qt color name (e.g., "green", "gray", "red")
-
-        Returns:
-            QIcon suitable for system tray display
-        """
+        """Create a 16x16 colored circular icon."""
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.transparent) # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType, reportAttributeAccessIssue]
         painter = QPainter(pixmap)
@@ -227,21 +182,124 @@ class TrayApp:
         return QIcon(pixmap)
 
     def notify_threshold(self) -> None:
-        """Show a desktop notification when session threshold is exceeded."""
+        """Show a desktop notification when threshold exceeded with action buttons."""
         title = "ScreenTracker Alert"
-        message = f"Session exceeded {ALERT_SESSION_MINUTES} minutes! Take a break.\n\nClick for actions."
-        self.tray_icon.showMessage(title, message, QIcon.fromTheme(ICON_ALERT), 0)
+        message = f"Session exceeded {ALERT_SESSION_MINUTES} minutes! Take a break."
+
+        # Build actions list - include snooze in notification
+        actions: List[Tuple[str, Callable[[], None]]] = []
+
+        if NOTIFY_BUTTONS.get("snooze", False):
+            actions.append((f"Snooze {SNOOZE_MINUTES}m", self.snooze_notification))
+
+        if NOTIFY_BUTTONS.get("suspend", False):
+            actions.append(("Suspend", self.system_suspend))
+
+        if NOTIFY_BUTTONS.get("screen_off", False):
+            actions.append(("Screen Off", self.screen_off))
+
+        if NOTIFY_BUTTONS.get("lock_screen", False):
+            actions.append(("Lock Screen", self.lock_screen))
+
+        # Try DBus notification first, fallback to Qt
+        if not self._notify_plasma(title, message, ICON_ALERT, actions):
+            # Fallback: Qt notification with click handler
+            self.tray_icon.showMessage(
+                title,
+                message + "\n\nClick for actions.",
+                QIcon.fromTheme(ICON_ALERT),
+                0
+            )
+
+    def send_test_notification(self) -> None:
+        """Send a test notification with all configured actions."""
+        title = "ScreenTracker Test"
+        message = "This is a test notification. Try the action buttons!"
+
+        actions: List[Tuple[str, Callable[[], None]]] = []
+
+        if NOTIFY_BUTTONS.get("snooze", False):
+            actions.append((f"Test Snooze {SNOOZE_MINUTES}m", lambda: print("Test: Snooze clicked")))
+
+        if NOTIFY_BUTTONS.get("suspend", False):
+            actions.append(("Test Suspend", lambda: print("Test: Suspend clicked")))
+
+        if NOTIFY_BUTTONS.get("screen_off", False):
+            actions.append(("Test Screen Off", lambda: print("Test: Screen Off clicked")))
+
+        if NOTIFY_BUTTONS.get("lock_screen", False):
+            actions.append(("Test Lock", lambda: print("Test: Lock clicked")))
+
+        if not self._notify_plasma(title, message, ICON_NORMAL, actions):
+            self.tray_icon.showMessage(title, message, QIcon.fromTheme(ICON_NORMAL), 5000)
+
+    def _notify_plasma(
+        self,
+        title: str,
+        message: str,
+        icon: str,
+        actions: Optional[List[Tuple[str, Callable[[], None]]]] = None
+    ) -> bool:
+        """Send KDE Plasma native notification over DBus with action buttons."""
+        try:
+            import dbus  # type: ignore[import-untyped]
+            import dbus.mainloop.glib  # type: ignore[import-untyped]
+            from gi.repository import GLib  # type: ignore[import-untyped]
+
+            dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)  # type: ignore[reportUnknownMemberType]
+            bus: dbus.SessionBus = dbus.SessionBus()  # type: ignore[reportUnknownMemberType]
+            obj = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")  # type: ignore[reportUnknownMemberType]
+            interface = dbus.Interface(obj, "org.freedesktop.Notifications")  # type: ignore[reportUnknownMemberType]
+
+            action_list: List[str] = []
+            action_callbacks: Dict[str, Callable[[], None]] = {}
+
+            if actions:
+                for label, callback in actions:
+                    key = label.lower().replace(" ", "_")
+                    action_list += [key, label]
+                    action_callbacks[key] = callback
+
+            # Define signal handler
+            def on_action_invoked(nid: int, action_key: str) -> None:
+                if action_key in action_callbacks:
+                    action_callbacks[action_key]()
+
+            bus.add_signal_receiver(  # type: ignore[reportUnknownMemberType]
+                on_action_invoked,
+                signal_name="ActionInvoked",
+                dbus_interface="org.freedesktop.Notifications",
+            )
+            self._dbus_signal_handler = on_action_invoked  # keep alive
+
+            interface.Notify(  # type: ignore[reportUnknownMemberType]
+                "ScreenTracker",
+                0,
+                icon,
+                title,
+                message,
+                action_list,
+                {},
+                0,  # sticky (no timeout)
+            )
+
+            return True
+
+        except Exception as e:
+            print(f"DBus notification failed: {e}")
+            return False
 
     def snooze_notification(self) -> None:
         """Snooze the notification for configured duration."""
         self.snooze_until = datetime.datetime.now() + datetime.timedelta(minutes=SNOOZE_MINUTES)
+        print(f"Snoozed until {self.snooze_until.isoformat()}")
+        # Send confirmation
         self.tray_icon.showMessage(
             "Snoozed",
             f"Alert snoozed for {SNOOZE_MINUTES} minutes",
             QIcon.fromTheme(ICON_NORMAL),
             3000
         )
-        print(f"Snoozed until {self.snooze_until.isoformat()}")
 
     def system_suspend(self) -> None:
         """Suspend the system."""
@@ -252,11 +310,11 @@ class TrayApp:
         subprocess.run(["xset", "dpms", "force", "off"], check=False)
 
     def lock_screen(self) -> None:
-        """Lock the current session."""
+        """Lock the screen."""
         subprocess.run(["loginctl", "lock-session"], check=False)
 
     def quit_app(self) -> None:
-        """Clean up and exit the application."""
+        """Quit the application."""
         self.tray_icon.hide()
         app_instance = QApplication.instance()
         if app_instance:
