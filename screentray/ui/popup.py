@@ -5,7 +5,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QShowEvent
 from PyQt5.QtCore import QTimer, Qt, QEvent
 import datetime
-from typing import List
+import socket
+import subprocess
+import webbrowser
+from typing import List, Optional
 from .activity_bar import ActivityBar
 from ..services.stats_service import StatsService
 from ..services.session_service import SessionService
@@ -26,6 +29,7 @@ class StatsPopup(QWidget):
         self.date = datetime.date.today()
         self.stats_service = StatsService()
         self.session_service = SessionService()
+        self.web_port: Optional[int] = None
 
         # Configure as native popup window
         self.setWindowTitle("ScreenTray Statistics")
@@ -60,6 +64,13 @@ class StatsPopup(QWidget):
 
         self.create_now_tab()
         self.create_daily_tab()
+
+        # Web dashboard button (if service is running)
+        self.check_web_service()
+        if self.web_port:
+            self.web_button = QPushButton("Open Web Dashboard")
+            self.web_button.clicked.connect(self.open_web_dashboard)
+            self.main_layout.addWidget(self.web_button)
 
         # Update timer
         self.timer = QTimer(self)
@@ -206,6 +217,65 @@ class StatsPopup(QWidget):
             return f"{m}m {s}s"
         else:
             return f"{s}s"
+
+    def check_web_service(self) -> None:
+        """Check if web service is running and on which port."""
+        try:
+            # Check if service is active
+            result = subprocess.run(
+                ["systemctl", "--user", "is-active", "screenstats-web.service"],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            
+            if result.returncode != 0:
+                self.web_port = None
+                return
+            
+            # Get port from recent journal entries
+            journal_result = subprocess.run(
+                ["journalctl", "--user", "-u", "screenstats-web.service", "-n", "50", "--no-pager"],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            
+            # Look for "Starting server on http://127.0.0.1:XXXX" in output
+            for line in journal_result.stdout.split('\n'):
+                if "127.0.0.1:" in line and "Starting server" in line:
+                    # Extract port number
+                    parts = line.split("127.0.0.1:")
+                    if len(parts) > 1:
+                        port_str = parts[1].split()[0].rstrip('.,;')
+                        try:
+                            self.web_port = int(port_str)
+                            return
+                        except ValueError:
+                            pass
+            
+            # Fallback: try common ports
+            for port in [5050, 8080, 5000]:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.1)
+                        if s.connect_ex(("127.0.0.1", port)) == 0:
+                            self.web_port = port
+                            return
+                except (socket.error, OSError):
+                    continue
+                    
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        
+        self.web_port = None
+
+    def open_web_dashboard(self) -> None:
+        """Open the web dashboard in default browser."""
+        if self.web_port:
+            url = f"http://127.0.0.1:{self.web_port}"
+            webbrowser.open(url)
+
 
     def showEvent(self, a0: QShowEvent | None) -> None:
         """

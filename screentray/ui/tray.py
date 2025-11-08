@@ -1,6 +1,8 @@
 """Main system tray application."""
 import subprocess
 import datetime
+import socket
+import webbrowser
 import os
 from typing import Optional, List, Tuple, Callable, Dict
 from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
@@ -23,6 +25,7 @@ class TrayApp:
         self.popup: StatsPopup = StatsPopup()
         self.notified_threshold = False
         self.snooze_until: Optional[datetime.datetime] = None
+        self.web_port: Optional[int] = None
         self._dbus_signal_handler: Optional[Callable[[int, str], None]] = None
 
         # Create tray icon
@@ -43,6 +46,9 @@ class TrayApp:
         self.timer.timeout.connect(self.update_status)  # pyright: ignore[reportGeneralTypeIssues]
         self.timer.start(2000)
 
+        # Check web service status
+        self.check_web_service()
+
         # Initial update and check
         self.update_status()
         self.tray_icon.show()
@@ -50,6 +56,12 @@ class TrayApp:
     def create_context_menu(self) -> None:
         """Create the context menu with all actions EXCEPT snooze."""
         self.menu = QMenu()
+
+        # Web Dashboard action (will be enabled/disabled based on service status)
+        self.web_action: QAction = self.menu.addAction("Open Web Dashboard")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
+        self.web_action.triggered.connect(self.open_web_dashboard)
+        self.web_action.setEnabled(False)  # Disabled until we confirm service is running
+        self.menu.addSeparator()
 
         # Quick Actions submenu (NO snooze)
         actions_menu = QMenu("Quick Actions", self.menu)
@@ -319,3 +331,65 @@ class TrayApp:
         app_instance = QApplication.instance()
         if app_instance:
             app_instance.quit()
+
+    def check_web_service(self) -> None:
+        """Check if web service is running and on which port."""
+        try:
+            # Check if service is active
+            result = subprocess.run(
+                ["systemctl", "--user", "is-active", "screenstats-web.service"],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            
+            if result.returncode != 0:
+                self.web_port = None
+                self.web_action.setEnabled(False)
+                return
+            
+            # Get port from recent journal entries
+            journal_result = subprocess.run(
+                ["journalctl", "--user", "-u", "screenstats-web.service", "-n", "50", "--no-pager"],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            
+            # Look for "Starting server on http://127.0.0.1:XXXX" in output
+            for line in journal_result.stdout.split('\n'):
+                if "127.0.0.1:" in line and "Starting server" in line:
+                    # Extract port number
+                    parts = line.split("127.0.0.1:")
+                    if len(parts) > 1:
+                        port_str = parts[1].split()[0].rstrip('.,;')
+                        try:
+                            self.web_port = int(port_str)
+                            self.web_action.setEnabled(True)
+                            return
+                        except ValueError:
+                            pass
+            
+            # Fallback: try common ports
+            for port in [5050, 8080, 5000]:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.1)
+                        if s.connect_ex(("127.0.0.1", port)) == 0:
+                            self.web_port = port
+                            self.web_action.setEnabled(True)
+                            return
+                except (socket.error, OSError):
+                    continue
+                    
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        
+        self.web_port = None
+        self.web_action.setEnabled(False)
+
+    def open_web_dashboard(self) -> None:
+        """Open the web dashboard in default browser."""
+        if self.web_port:
+            url = f"http://127.0.0.1:{self.web_port}"
+            webbrowser.open(url)
