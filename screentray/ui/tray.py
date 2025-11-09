@@ -322,7 +322,7 @@ class TrayApp:
 
     def system_suspend(self) -> None:
         """Suspend the system."""
-        subprocess.run(["systemctl", "suspend"], check=False)
+        subprocess.run(["systemctl", "suspend", "--check-inhibitors=no"], check=False)
 
     def screen_off(self) -> None:
         """Turn off the screen."""
