@@ -9,8 +9,9 @@ from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
 from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor
 from PyQt5.QtCore import QTimer, Qt
 from .popup import StatsPopup
+from ..config import settings, NOTIFY_BUTTONS
 from ..services.session_service import SessionService
-from ..config import ALERT_SESSION_MINUTES, NOTIFY_BUTTONS, SNOOZE_MINUTES
+from . import config_dialog
 
 ICON_NORMAL = "preferences-desktop"
 ICON_ALERT = "chronometer-pause-symbolic"
@@ -32,7 +33,7 @@ class TrayApp:
         self.tray_icon = QSystemTrayIcon(QIcon.fromTheme(ICON_NORMAL))
         self.tray_icon.setToolTip("ScreenTray")
 
-        # Context menu - NO snooze here
+        # Context menu
         self.create_context_menu()
 
         # Connect notification message clicked signal (fallback)
@@ -54,16 +55,22 @@ class TrayApp:
         self.tray_icon.show()
 
     def create_context_menu(self) -> None:
-        """Create the context menu with all actions EXCEPT snooze."""
+        """Create the context menu with all actions."""
         self.menu = QMenu()
 
         # Web Dashboard action (will be enabled/disabled based on service status)
-        self.web_action: QAction = self.menu.addAction("Open Web Dashboard")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-        self.web_action.triggered.connect(self.open_web_dashboard)
-        self.web_action.setEnabled(False)  # Disabled until we confirm service is running
+        self.web_action: Optional[QAction] = self.menu.addAction("Open Web Dashboard")  # pyright: ignore[reportUnknownMemberType]
+        if self.web_action:
+            self.web_action.triggered.connect(self.open_web_dashboard)
+            self.web_action.setEnabled(False)  # Disabled until we confirm service is running
         self.menu.addSeparator()
 
-        # Quick Actions submenu (NO snooze)
+        # Settings action
+        settings_action: QAction = self.menu.addAction("Settings...")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
+        settings_action.triggered.connect(self.open_settings)
+        self.menu.addSeparator()
+
+        # Quick Actions submenu
         actions_menu = QMenu("Quick Actions", self.menu)
         actions_added = False
 
@@ -141,7 +148,7 @@ class TrayApp:
                 tooltip += f"\nLast Break: {int(break_s / 60)}m"
 
             # Check if we should notify
-            if session_m >= ALERT_SESSION_MINUTES:
+            if session_m >= settings.alert_session_minutes:
                 self.tray_icon.setIcon(QIcon.fromTheme(ICON_ALERT))
 
                 # Check if we should send notification
@@ -196,13 +203,13 @@ class TrayApp:
     def notify_threshold(self) -> None:
         """Show a desktop notification when threshold exceeded with action buttons."""
         title = "ScreenTracker Alert"
-        message = f"Session exceeded {ALERT_SESSION_MINUTES} minutes! Take a break."
+        message = f"Session exceeded {settings.alert_session_minutes} minutes! Take a break."
 
         # Build actions list - include snooze in notification
         actions: List[Tuple[str, Callable[[], None]]] = []
 
         if NOTIFY_BUTTONS.get("snooze", False):
-            actions.append((f"Snooze {SNOOZE_MINUTES}m", self.snooze_notification))
+            actions.append((f"Snooze {settings.snooze_minutes}m", self.snooze_notification))
 
         if NOTIFY_BUTTONS.get("suspend", False):
             actions.append(("Suspend", self.system_suspend))
@@ -231,7 +238,7 @@ class TrayApp:
         actions: List[Tuple[str, Callable[[], None]]] = []
 
         if NOTIFY_BUTTONS.get("snooze", False):
-            actions.append((f"Test Snooze {SNOOZE_MINUTES}m", lambda: print("Test: Snooze clicked")))
+            actions.append((f"Test Snooze {settings.snooze_minutes}m", lambda: print("Test: Snooze clicked")))
 
         if NOTIFY_BUTTONS.get("suspend", False):
             actions.append(("Test Suspend", lambda: print("Test: Suspend clicked")))
@@ -303,12 +310,12 @@ class TrayApp:
 
     def snooze_notification(self) -> None:
         """Snooze the notification for configured duration."""
-        self.snooze_until = datetime.datetime.now() + datetime.timedelta(minutes=SNOOZE_MINUTES)
+        self.snooze_until = datetime.datetime.now() + datetime.timedelta(minutes=settings.snooze_minutes)
         print(f"Snoozed until {self.snooze_until.isoformat()}")
         # Send confirmation
         self.tray_icon.showMessage(
             "Snoozed",
-            f"Alert snoozed for {SNOOZE_MINUTES} minutes",
+            f"Alert snoozed for {settings.snooze_minutes} minutes",
             QIcon.fromTheme(ICON_NORMAL),
             3000
         )
@@ -342,12 +349,13 @@ class TrayApp:
                 text=True,
                 timeout=1
             )
-            
+
             if result.returncode != 0:
                 self.web_port = None
-                self.web_action.setEnabled(False)
+                if self.web_action:
+                    self.web_action.setEnabled(False)
                 return
-            
+
             # Get port from recent journal entries
             journal_result = subprocess.run(
                 ["journalctl", "--user", "-u", "screenstats-web.service", "-n", "50", "--no-pager"],
@@ -355,7 +363,7 @@ class TrayApp:
                 text=True,
                 timeout=2
             )
-            
+
             # Look for "Starting server on http://127.0.0.1:XXXX" in output
             for line in journal_result.stdout.split('\n'):
                 if "127.0.0.1:" in line and "Starting server" in line:
@@ -365,11 +373,12 @@ class TrayApp:
                         port_str = parts[1].split()[0].rstrip('.,;')
                         try:
                             self.web_port = int(port_str)
-                            self.web_action.setEnabled(True)
+                            if self.web_action:
+                                self.web_action.setEnabled(True)
                             return
                         except ValueError:
                             pass
-            
+
             # Fallback: try common ports
             for port in [5050, 8080, 5000]:
                 try:
@@ -377,19 +386,33 @@ class TrayApp:
                         s.settimeout(0.1)
                         if s.connect_ex(("127.0.0.1", port)) == 0:
                             self.web_port = port
-                            self.web_action.setEnabled(True)
+                            if self.web_action:
+                                self.web_action.setEnabled(True)
                             return
                 except (socket.error, OSError):
                     continue
-                    
+
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
+
         self.web_port = None
-        self.web_action.setEnabled(False)
+        if self.web_action:
+            self.web_action.setEnabled(False)
 
     def open_web_dashboard(self) -> None:
         """Open the web dashboard in default browser."""
         if self.web_port:
             url = f"http://127.0.0.1:{self.web_port}"
             webbrowser.open(url)
+
+    def open_settings(self) -> None:
+        """Open the settings dialog."""
+        dialog = config_dialog.ConfigDialog()
+        if dialog.exec_():  # Returns True if user clicked OK
+            # Reload config to pick up new values
+            settings.reload()
+            # Reset notification state so new threshold takes effect
+            self.notified_threshold = False
+            self.snooze_until = None
+            # Immediately update status to reflect new threshold
+            self.update_status()

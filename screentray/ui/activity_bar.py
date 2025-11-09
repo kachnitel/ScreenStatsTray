@@ -6,7 +6,7 @@ import datetime
 from typing import Any, List, Dict
 from ..services.activity_service import ActivityService
 from ..services.session_service import SessionService
-from ..config import ALERT_SESSION_MINUTES
+from ..config import settings
 
 
 class ActivityBar(QWidget):
@@ -66,7 +66,7 @@ class ActivityBar(QWidget):
                 session_w = max(2, int((session_duration / total_seconds) * width))
 
                 # Color based on duration threshold
-                if session_duration / 60 < ALERT_SESSION_MINUTES:
+                if session_duration / 60 < settings.alert_session_minutes:
                     session_color = QColor("yellow")
                 else:
                     session_color = QColor("red")
