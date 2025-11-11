@@ -108,3 +108,12 @@ class PluginBase(ABC):
     def on_inactive(self) -> None:
         """Called when system becomes inactive (idle/screen off)."""
         pass
+    # Plugin manager access (optional)
+    
+    def set_plugin_manager(self, manager: Any) -> None:
+        """
+        Receive plugin manager reference (optional).
+        
+        Useful for plugins that need to discover other plugins.
+        """
+        pass

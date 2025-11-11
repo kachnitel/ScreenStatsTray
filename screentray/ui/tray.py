@@ -47,8 +47,11 @@ class TrayApp:
         self.timer.timeout.connect(self.update_status)  # pyright: ignore[reportGeneralTypeIssues]
         self.timer.start(2000)
 
-        # Check web service status
-        self.check_web_service()
+        # Delayed web service check (plugins need time to start)
+        self.web_check_timer = QTimer()
+        self.web_check_timer.setSingleShot(True)
+        self.web_check_timer.timeout.connect(self.check_web_service)  # pyright: ignore[reportGeneralTypeIssues]
+        self.web_check_timer.start(10000)  # Check after 3 seconds
 
         # Initial update and check
         self.update_status()
@@ -332,68 +335,16 @@ class TrayApp:
         """Lock the screen."""
         subprocess.run(["loginctl", "lock-session"], check=False)
 
-    def quit_app(self) -> None:
-        """Quit the application."""
-        self.tray_icon.hide()
-        app_instance = QApplication.instance()
-        if app_instance:
-            app_instance.quit()
-
     def check_web_service(self) -> None:
-        """Check if web service is running and on which port."""
-        try:
-            # Check if service is active
-            result = subprocess.run(
-                ["systemctl", "--user", "is-active", "screenstats-web.service"],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-
-            if result.returncode != 0:
-                self.web_port = None
+        """Check if web plugin is loaded and get its URL."""
+        web_plugin = self.popup.plugin_manager.get_plugin('web')
+        if web_plugin and hasattr(web_plugin, 'get_port'):
+            port = web_plugin.get_port()  # type: ignore
+            if port:
+                self.web_port = port
                 if self.web_action:
-                    self.web_action.setEnabled(False)
+                    self.web_action.setEnabled(True)
                 return
-
-            # Get port from recent journal entries
-            journal_result = subprocess.run(
-                ["journalctl", "--user", "-u", "screenstats-web.service", "-n", "50", "--no-pager"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-
-            # Look for "Starting server on http://127.0.0.1:XXXX" in output
-            for line in journal_result.stdout.split('\n'):
-                if "127.0.0.1:" in line and "Starting server" in line:
-                    # Extract port number
-                    parts = line.split("127.0.0.1:")
-                    if len(parts) > 1:
-                        port_str = parts[1].split()[0].rstrip('.,;')
-                        try:
-                            self.web_port = int(port_str)
-                            if self.web_action:
-                                self.web_action.setEnabled(True)
-                            return
-                        except ValueError:
-                            pass
-
-            # Fallback: try common ports
-            for port in [5050, 8080, 5000]:
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(0.1)
-                        if s.connect_ex(("127.0.0.1", port)) == 0:
-                            self.web_port = port
-                            if self.web_action:
-                                self.web_action.setEnabled(True)
-                            return
-                except (socket.error, OSError):
-                    continue
-
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
 
         self.web_port = None
         if self.web_action:
@@ -401,9 +352,17 @@ class TrayApp:
 
     def open_web_dashboard(self) -> None:
         """Open the web dashboard in default browser."""
-        if self.web_port:
-            url = f"http://127.0.0.1:{self.web_port}"
+        web_plugin = self.popup.plugin_manager.get_plugin('web')
+        if web_plugin and hasattr(web_plugin, 'get_url'):
+            url = web_plugin.get_url()  # type: ignore
             webbrowser.open(url)
+
+    def quit_app(self) -> None:
+        """Quit the application."""
+        self.tray_icon.hide()
+        app_instance = QApplication.instance()
+        if app_instance:
+            app_instance.quit()
 
     def open_settings(self) -> None:
         """Open the settings dialog."""

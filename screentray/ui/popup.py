@@ -219,61 +219,22 @@ class StatsPopup(QWidget):
             return f"{s}s"
 
     def check_web_service(self) -> None:
-        """Check if web service is running and on which port."""
-        try:
-            # Check if service is active
-            result = subprocess.run(
-                ["systemctl", "--user", "is-active", "screenstats-web.service"],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-            
-            if result.returncode != 0:
-                self.web_port = None
+        """Check if web plugin is available."""
+        web_plugin = self.plugin_manager.get_plugin('web')
+        if web_plugin and hasattr(web_plugin, 'get_port'):
+            port = web_plugin.get_port()  # type: ignore
+            if port:
+                self.web_port = port
                 return
-            
-            # Get port from recent journal entries
-            journal_result = subprocess.run(
-                ["journalctl", "--user", "-u", "screenstats-web.service", "-n", "50", "--no-pager"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            
-            # Look for "Starting server on http://127.0.0.1:XXXX" in output
-            for line in journal_result.stdout.split('\n'):
-                if "127.0.0.1:" in line and "Starting server" in line:
-                    # Extract port number
-                    parts = line.split("127.0.0.1:")
-                    if len(parts) > 1:
-                        port_str = parts[1].split()[0].rstrip('.,;')
-                        try:
-                            self.web_port = int(port_str)
-                            return
-                        except ValueError:
-                            pass
-            
-            # Fallback: try common ports
-            for port in [5050, 8080, 5000]:
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(0.1)
-                        if s.connect_ex(("127.0.0.1", port)) == 0:
-                            self.web_port = port
-                            return
-                except (socket.error, OSError):
-                    continue
-                    
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
         
         self.web_port = None
 
+
     def open_web_dashboard(self) -> None:
         """Open the web dashboard in default browser."""
-        if self.web_port:
-            url = f"http://127.0.0.1:{self.web_port}"
+        web_plugin = self.plugin_manager.get_plugin('web')
+        if web_plugin and hasattr(web_plugin, 'get_url'):
+            url = web_plugin.get_url()  # type: ignore
             webbrowser.open(url)
 
 

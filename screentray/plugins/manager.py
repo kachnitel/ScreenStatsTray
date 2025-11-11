@@ -5,6 +5,7 @@ Plugin discovery and lifecycle management.
 """
 import os
 import importlib
+from typing import Optional
 from .base import PluginBase
 
 
@@ -149,3 +150,17 @@ class PluginManager:
     def is_active(self) -> bool:
         """Check current activity state."""
         return self._active_state == "active"
+
+    def get_plugin(self, name: str) -> Optional[PluginBase]:
+        """Get a specific plugin by name."""
+        return self.plugins.get(name)
+
+    def get_all_plugins(self) -> list[PluginBase]:
+        """Get all loaded plugins."""
+        return list(self.plugins.values())
+
+    def set_plugin_manager_for_all(self) -> None:
+        """Pass plugin manager reference to plugins that need it."""
+        for plugin in self.plugins.values():
+            if hasattr(plugin, 'set_plugin_manager'):
+                plugin.set_plugin_manager(self)  # type: ignore

@@ -95,6 +95,7 @@ def main() -> None:
     plugin_manager = PluginManager()
     plugin_manager.discover_plugins()
     plugin_manager.install_all()
+    plugin_manager.set_plugin_manager_for_all()
     plugin_manager.start_all()
 
     # Track state
