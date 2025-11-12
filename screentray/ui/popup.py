@@ -1,27 +1,24 @@
-"""Statistics popup window."""
+"""Statistics popup window with event-driven plugin system."""
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QTabWidget
 )
 from PyQt5.QtGui import QShowEvent
 from PyQt5.QtCore import QTimer, Qt, QEvent
 import datetime
-import socket
-import subprocess
-import webbrowser
-from typing import List, Optional
+from typing import List
 from .activity_bar import ActivityBar
 from ..services.stats_service import StatsService
 from ..services.session_service import SessionService
 from ..plugins import PluginManager
+from ..plugins.events import PluginEvent, EventContext
 
 
 class StatsPopup(QWidget):
     """
-    Statistics popup widget with native tray popup behavior.
+    Statistics popup with native tray behavior.
 
-    Displays activity statistics in a compact, tray-anchored window
-    that automatically hides when focus is lost, mimicking KDE's
-    native tray popups like network manager.
+    Emits POPUP_READY event for plugins to add widgets without
+    coupling core to plugin implementations.
     """
 
     def __init__(self) -> None:
@@ -29,17 +26,15 @@ class StatsPopup(QWidget):
         self.date = datetime.date.today()
         self.stats_service = StatsService()
         self.session_service = SessionService()
-        self.web_port: Optional[int] = None
 
         # Configure as native popup window
         self.setWindowTitle("ScreenTray Statistics")
         self.setWindowFlags(
-            Qt.Popup |  # Popup window that auto-hides on focus loss # pyright: ignore[reportAttributeAccessIssue,reportUnknownArgumentType,reportUnknownMemberType]
-            Qt.FramelessWindowHint  # No window decorations # pyright: ignore[reportUnknownArgumentType,reportAttributeAccessIssue,reportUnknownMemberType]
+            Qt.Popup |  # pyright: ignore[reportAttributeAccessIssue,reportUnknownArgumentType,reportUnknownMemberType]
+            Qt.FramelessWindowHint  # pyright: ignore[reportUnknownArgumentType,reportAttributeAccessIssue,reportUnknownMemberType]
         )
         self.setAttribute(Qt.WA_TranslucentBackground, False) # pyright: ignore[reportAttributeAccessIssue, reportUnknownArgumentType, reportUnknownMemberType]
 
-        # Set reasonable size constraints
         self.setMinimumWidth(320)
         self.setMaximumWidth(450)
         self.setMaximumHeight(600)
@@ -51,6 +46,15 @@ class StatsPopup(QWidget):
         # Initialize plugin manager and collect widgets
         self.plugin_manager = PluginManager()
         self.plugin_manager.discover_plugins()
+
+        # Register event handlers before emitting events
+        for plugin in self.plugin_manager.plugins.values():
+            try:
+                plugin.register_events(self.plugin_manager)
+            except Exception as e:
+                print(f"Error registering events for plugin: {e}")
+
+        # Legacy support: collect widgets from get_popup_widget()
         self.plugin_widgets: List[QWidget] = []
 
         for plugin in self.plugin_manager.plugins.values():
@@ -65,12 +69,11 @@ class StatsPopup(QWidget):
         self.create_now_tab()
         self.create_daily_tab()
 
-        # Web dashboard button (if service is running)
-        self.check_web_service()
-        if self.web_port:
-            self.web_button = QPushButton("Open Web Dashboard")
-            self.web_button.clicked.connect(self.open_web_dashboard)
-            self.main_layout.addWidget(self.web_button)
+        # Emit event for plugins to add buttons/widgets
+        self.plugin_manager.events.emit(
+            PluginEvent.POPUP_READY,
+            EventContext(popup=self, layout=self.main_layout)
+        )
 
         # Update timer
         self.timer = QTimer(self)
@@ -80,13 +83,12 @@ class StatsPopup(QWidget):
         self.update_all_stats()
 
     def create_now_tab(self) -> None:
-        """Create the 'Now' tab showing live session and 24h activity."""
+        """Create 'Now' tab with live session info."""
         now_tab = QWidget()
         now_layout = QVBoxLayout()
         now_layout.setContentsMargins(5, 10, 5, 5)
         now_tab.setLayout(now_layout)
 
-        # Current session stats
         now_layout.addWidget(QLabel("<b>Current Status:</b>"))
         self.session_label = QLabel("Session: ...")
         self.break_label = QLabel("Last Break: ...")
@@ -95,7 +97,6 @@ class StatsPopup(QWidget):
 
         now_layout.addSpacing(15)
 
-        # 24h activity bar
         now_layout.addWidget(QLabel("<b>Last 24h Activity:</b>"))
         self.activity_bar = ActivityBar()
         now_layout.addWidget(self.activity_bar)
@@ -104,7 +105,7 @@ class StatsPopup(QWidget):
         self.tab_widget.addTab(now_tab, "Now")
 
     def create_daily_tab(self) -> None:
-        """Create the 'Daily Stats' tab with historical data."""
+        """Create 'Daily Stats' tab."""
         daily_tab = QWidget()
         daily_layout = QVBoxLayout()
         daily_layout.setContentsMargins(5, 10, 5, 5)
@@ -125,14 +126,13 @@ class StatsPopup(QWidget):
 
         daily_layout.addSpacing(15)
 
-        # Daily totals
         daily_layout.addWidget(QLabel("<b>Daily Totals:</b>"))
         self.active_label = QLabel("Active: ...")
         self.inactive_label = QLabel("Inactive: ...")
         daily_layout.addWidget(self.active_label)
         daily_layout.addWidget(self.inactive_label)
 
-        # Plugin widgets
+        # Legacy: Add plugin widgets
         if self.plugin_widgets:
             daily_layout.addSpacing(15)
             for widget in self.plugin_widgets:
@@ -142,12 +142,12 @@ class StatsPopup(QWidget):
         self.tab_widget.addTab(daily_tab, "Daily Stats")
 
     def update_all_stats(self) -> None:
-        """Update statistics for all tabs."""
+        """Update all statistics."""
         self.update_live_stats()
         self.update_historical_stats()
 
     def update_live_stats(self) -> None:
-        """Update live statistics on the 'Now' tab."""
+        """Update live statistics on 'Now' tab."""
         self.activity_bar.update_data()
 
         is_active = self.session_service.is_currently_active()
@@ -172,7 +172,7 @@ class StatsPopup(QWidget):
                 self.break_label.setText(f"Last Break: {self._format_seconds(break_s)}")
 
     def update_historical_stats(self) -> None:
-        """Update historical statistics on the 'Daily Stats' tab."""
+        """Update historical statistics on 'Daily Stats' tab."""
         self.date_label.setText(f"<b>{self.date.isoformat()}</b>")
         self.next_button.setEnabled(self.date < datetime.date.today())
 
@@ -181,7 +181,7 @@ class StatsPopup(QWidget):
         self.active_label.setText(f"Active: {self._format_seconds(totals['active'])}")
         self.inactive_label.setText(f"Inactive: {self._format_seconds(totals['inactive'])}")
 
-        # Update plugin widgets with selected date
+        # Update legacy plugin widgets
         for widget in self.plugin_widgets:
             if hasattr(widget, 'update_data'):
                 widget.update_data(self.date) # pyright: ignore[reportUnknownMemberType]
@@ -198,15 +198,7 @@ class StatsPopup(QWidget):
             self.update_historical_stats()
 
     def _format_seconds(self, seconds: float) -> str:
-        """
-        Format seconds into human-readable duration.
-
-        Args:
-            seconds: Duration in seconds
-
-        Returns:
-            Formatted string (e.g., "2h 15m 30s", "45m 12s", "23s")
-        """
+        """Format seconds into human-readable duration."""
         total_s = int(seconds)
         h = total_s // 3600
         m = (total_s % 3600) // 60
@@ -218,48 +210,14 @@ class StatsPopup(QWidget):
         else:
             return f"{s}s"
 
-    def check_web_service(self) -> None:
-        """Check if web plugin is available."""
-        web_plugin = self.plugin_manager.get_plugin('web')
-        if web_plugin and hasattr(web_plugin, 'get_port'):
-            port = web_plugin.get_port()  # type: ignore
-            if port:
-                self.web_port = port
-                return
-        
-        self.web_port = None
-
-
-    def open_web_dashboard(self) -> None:
-        """Open the web dashboard in default browser."""
-        web_plugin = self.plugin_manager.get_plugin('web')
-        if web_plugin and hasattr(web_plugin, 'get_url'):
-            url = web_plugin.get_url()  # type: ignore
-            webbrowser.open(url)
-
-
     def showEvent(self, a0: QShowEvent | None) -> None:
-        """
-        Handle popup display event.
-
-        Resets to today's date and refreshes all statistics
-        when the popup is shown.
-        """
+        """Reset to today and refresh on show."""
         self.date = datetime.date.today()
         self.update_all_stats()
         super().showEvent(a0)
 
     def event(self, a0: QEvent|None) -> bool:
-        """
-        Handle window events.
-
-        Specifically handles WindowDeactivate to hide the popup
-        when it loses focus, matching native KDE popup behavior.
-        """
-        if a0 == None:
-            return super().event(a0)
-
-        if a0.type() == QEvent.WindowDeactivate: # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-            # Auto-hide when focus is lost (native popup behavior)
+        """Auto-hide on focus loss."""
+        if a0 and a0.type() == QEvent.WindowDeactivate: # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             self.hide()
         return super().event(a0)

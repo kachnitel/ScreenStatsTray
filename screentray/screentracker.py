@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Background service to track user activity with plugin support.
+Background service to track user activity with event-driven plugin system.
 """
 import os
 import time
@@ -49,7 +49,6 @@ def is_screen_on() -> bool:
         out = subprocess.check_output(["xset", "-q"]).decode()
         is_on = "Monitor is On" in out
         if DEBUG_MODE:
-            # Extract DPMS state from xset output
             dpms_line = [line for line in out.split('\n') if 'Monitor is' in line]
             debug_log(f"xset -q: {dpms_line[0].strip() if dpms_line else 'unknown'}")
         return is_on
@@ -66,28 +65,27 @@ def get_active_window_info() -> str:
             ["xdotool", "getactivewindow"],
             stderr=subprocess.DEVNULL
         ).decode().strip()
-        
+
         app_name = subprocess.check_output(
             ["xdotool", "getwindowclassname", window_id],
             stderr=subprocess.DEVNULL
         ).decode().strip()
-        
+
         window_title = subprocess.check_output(
             ["xdotool", "getwindowname", window_id],
             stderr=subprocess.DEVNULL
         ).decode().strip()
-        
-        # Truncate title if too long
+
         if len(window_title) > 50:
             window_title = window_title[:47] + "..."
-        
+
         return f"{app_name}: {window_title}"
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
 
 
 def main() -> None:
-    """Main tracking loop with plugin support."""
+    """Main tracking loop with event-driven plugin system."""
     ensure_db_exists()
     repo = EventRepository()
 
@@ -96,6 +94,14 @@ def main() -> None:
     plugin_manager.discover_plugins()
     plugin_manager.install_all()
     plugin_manager.set_plugin_manager_for_all()
+
+    # Register plugin event handlers
+    for plugin in plugin_manager.plugins.values():
+        try:
+            plugin.register_events(plugin_manager)
+        except Exception as e:
+            print(f"Error registering events for {plugin.get_info()['name']}: {e}")
+
     plugin_manager.start_all()
 
     # Track state
@@ -125,7 +131,6 @@ def main() -> None:
 
             # Debug: Track idle changes
             if DEBUG_MODE:
-                # Check if idle counter reset (user activity)
                 if idle_sec < last_idle_value:
                     time_since_last_change = (now - last_idle_change_time).total_seconds()
                     window_info = get_active_window_info()
@@ -134,14 +139,13 @@ def main() -> None:
                         f"(after {time_since_last_change:.1f}s) | Window: {window_info}"
                     )
                     last_idle_change_time = now
-                
-                # Track significant idle increases (no activity for a while)
+
                 elif idle_sec - last_idle_value > 5.0:
                     debug_log(
                         f"IDLE INCREASE: {last_idle_value:.1f}s -> {idle_sec:.1f}s "
                         f"(+{idle_sec - last_idle_value:.1f}s)"
                     )
-                
+
                 last_idle_value = idle_sec
 
             # Determine actual state
@@ -151,7 +155,6 @@ def main() -> None:
                 new_state = "inactive"
 
             if DEBUG_MODE and new_state == "active":
-                # Log what's keeping system active
                 window_info = get_active_window_info()
                 debug_log(
                     f"STATE: {new_state} | idle={idle_sec:.1f}s | "
@@ -159,21 +162,18 @@ def main() -> None:
                 )
 
             if current_state == "unknown":
-                current_state = new_state # Establish initial state
+                current_state = new_state
 
                 if DEBUG_MODE:
                     debug_log(f"Initial state established: {new_state}")
 
-                # If we start active, notify plugins immediately and record initial poll data
                 if new_state == "active":
                     plugin_manager.notify_active()
-                    # Record a poll event right away for better logging
                     detail = f"state={new_state} idle={idle_sec:.0f}s screen={'on' if screen_on else 'off'}"
                     repo.insert("poll", detail)
                     print(f"[{now.isoformat(timespec='seconds')}] poll (initial): {detail}")
                     last_poll_log = now
 
-                # Wait for the next loop iteration
                 time.sleep(LOG_INTERVAL)
                 continue
 
@@ -181,17 +181,12 @@ def main() -> None:
             if new_state != current_state:
                 if DEBUG_MODE:
                     debug_log(f"STATE CHANGE: {current_state} -> {new_state}")
-                
+
                 if new_state == "active":
-                    # Became active
                     repo.insert("idle_end", f"idle was {idle_sec:.0f}s")
                     print(f"[{now.isoformat(timespec='seconds')}] idle_end (idle was {idle_sec:.0f}s)")
-
-                    # Notify plugins
                     plugin_manager.notify_active()
-
                 else:
-                    # Became inactive
                     if not screen_on:
                         repo.insert("screen_off")
                         print(f"[{now.isoformat(timespec='seconds')}] screen_off")
@@ -205,7 +200,6 @@ def main() -> None:
                         if DEBUG_MODE:
                             debug_log(f"Inactive reason: idle threshold exceeded ({idle_sec:.0f}s > {IDLE_THRESHOLD_SEC}s)")
 
-                    # Notify plugins
                     plugin_manager.notify_inactive()
 
             # Poll plugins (only if active)

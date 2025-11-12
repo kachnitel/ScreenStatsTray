@@ -1,28 +1,38 @@
 """
-screentray/plugins/manager.py
-
-Plugin discovery and lifecycle management.
+Plugin discovery and lifecycle management with event system.
 """
 import os
 import importlib
-from typing import Optional
+from typing import Optional, List
 from .base import PluginBase
+from .events import EventDispatcher#, PluginEvent, EventContext
 
 
 class PluginManager:
     """
-    Discovers and manages plugins in the screentray/plugins directory.
+    Discovers and manages plugins with event-driven architecture.
+
+    Provides event system for plugins to hook into UI and lifecycle events
+    without coupling core components to specific plugin implementations.
 
     Usage:
         manager = PluginManager()
         manager.discover_plugins()
         manager.install_all()
+        manager.set_plugin_manager_for_all()
         manager.start_all()
+
+        # Emit event for plugins to handle
+        manager.events.emit(
+            PluginEvent.TRAY_MENU_READY,
+            EventContext(menu=menu, tray=self)
+        )
     """
 
     def __init__(self) -> None:
         self.plugins: dict[str, PluginBase] = {}
         self._active_state: str = "inactive"
+        self.events = EventDispatcher()
 
     def discover_plugins(self) -> None:
         """
@@ -155,12 +165,18 @@ class PluginManager:
         """Get a specific plugin by name."""
         return self.plugins.get(name)
 
-    def get_all_plugins(self) -> list[PluginBase]:
+    def get_all_plugins(self) -> List[PluginBase]:
         """Get all loaded plugins."""
         return list(self.plugins.values())
 
     def set_plugin_manager_for_all(self) -> None:
-        """Pass plugin manager reference to plugins that need it."""
+        """
+        Pass plugin manager reference to plugins that need it.
+
+        This allows plugins to access the event system and discover
+        other plugins if needed (e.g., web plugin discovering plugins
+        with web content).
+        """
         for plugin in self.plugins.values():
             if hasattr(plugin, 'set_plugin_manager'):
                 plugin.set_plugin_manager(self)  # type: ignore

@@ -1,25 +1,43 @@
 """
-screentray/plugins/base.py
-
-Base plugin interface that all plugins must implement.
+Base plugin interface with event system integration.
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
-from PyQt5.QtWidgets import QWidget
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PyQt5.QtWidgets import QWidget
+    from .manager import PluginManager
 
 
 class PluginBase(ABC):
     """
     Base class for all ScreenTray plugins.
 
-    Plugins extend functionality by:
-    - Adding their own database tables
-    - Contributing widgets to the UI
-    - Providing web API endpoints
+    Plugins extend functionality through:
+    - Database operations (install/uninstall)
+    - Event handlers (register_events)
+    - State awareness (on_active/on_inactive)
+    - Optional UI/web extensions
+
+    Event System:
+        Plugins register handlers for lifecycle and UI events through
+        register_events(). Core components emit events that plugins
+        respond to, avoiding hardcoded coupling.
+
+    Example:
+        class MyPlugin(PluginBase):
+            def register_events(self, manager: PluginManager) -> None:
+                manager.events.register(
+                    PluginEvent.TRAY_MENU_READY,
+                    self._on_tray_ready
+                )
+
+            def _on_tray_ready(self, ctx: EventContext) -> None:
+                ctx.menu.addAction("My Action", self.my_handler)
     """
 
     @abstractmethod
-    def get_info(self) -> dict[str, Any]:
+    def get_info(self) -> Dict[str, Any]:
         """
         Return plugin metadata.
 
@@ -62,44 +80,34 @@ class PluginBase(ABC):
         """
         pass
 
-    # UI Integration (optional - return None if not implemented)
+    # Event System Integration
 
-    def get_popup_widget(self) -> Optional[QWidget]:
+    def register_events(self, manager: 'PluginManager') -> None:
         """
-        Return a Qt widget to display in the tray popup.
+        Register event handlers with the plugin manager.
 
-        Returns:
-            QWidget or None if no UI component
+        Called during initialization to let plugins subscribe to
+        UI and lifecycle events without coupling core to plugin
+        implementations.
+
+        Args:
+            manager: PluginManager with event dispatcher
+
+        Example:
+            def register_events(self, manager: PluginManager) -> None:
+                # Register for tray menu event
+                manager.events.register(
+                    PluginEvent.TRAY_MENU_READY,
+                    self._handle_tray_menu
+                )
+
+            def _handle_tray_menu(self, ctx: EventContext) -> None:
+                action = ctx.menu.addAction("My Action")
+                action.triggered.connect(self.my_handler)
         """
-        return None
+        pass
 
-    def get_web_routes(self) -> list[tuple[str, Any]]:
-        """
-        Return Flask route definitions for web interface.
-
-        Returns:
-            List of (route_path, view_function) tuples
-            Example: [("/api/plugin/data", self.api_data)]
-        """
-        return []
-
-    def get_web_content(self) -> Dict[str, Any]:
-        """
-        Return web UI content for injection into main interface.
-
-        Returns:
-            Dict with keys:
-                'slots': Dict mapping slot names to HTML content
-                       Available slots: 'overview_bottom', 'daily_bottom', 'weekly_bottom', 'events_bottom'
-                'javascript': JavaScript code to inject into page
-                'new_tab': Optional dict with 'id', 'title', and 'content' for a new tab
-        """
-        return {
-            'slots': {},
-            'javascript': '',
-        }
-
-    # State awareness (plugins can override to react to state changes)
+    # State Awareness (Direct Callbacks)
 
     def on_active(self) -> None:
         """Called when system becomes active (user present)."""
@@ -108,12 +116,60 @@ class PluginBase(ABC):
     def on_inactive(self) -> None:
         """Called when system becomes inactive (idle/screen off)."""
         pass
-    # Plugin manager access (optional)
-    
-    def set_plugin_manager(self, manager: Any) -> None:
+
+    # Optional UI Extensions
+
+    def get_popup_widget(self) -> Optional['QWidget']:
         """
-        Receive plugin manager reference (optional).
-        
-        Useful for plugins that need to discover other plugins.
+        Return a Qt widget to display in the tray popup.
+
+        DEPRECATED: Use register_events() with POPUP_READY event instead.
+        Maintained for backward compatibility.
+
+        Returns:
+            QWidget or None if no UI component
+        """
+        return None
+
+    # Web Extensions (for web plugin and extenders)
+
+    def get_web_routes(self) -> list[tuple[str, Any]]:
+        """
+        Return Flask route definitions for web interface.
+
+        Only used by plugins that extend the web plugin.
+
+        Returns:
+            List of (route_path, view_function) tuples
+        """
+        return []
+
+    def get_web_content(self) -> Dict[str, Any]:
+        """
+        Return web UI content for injection into main interface.
+
+        Only used by plugins that extend the web plugin.
+
+        Returns:
+            Dict with 'slots', 'javascript', and optional 'new_tab'
+        """
+        return {
+            'slots': {},
+            'javascript': '',
+        }
+
+    # Plugin Manager Access
+
+    def set_plugin_manager(self, manager: 'PluginManager') -> None:
+        """
+        Receive plugin manager reference.
+
+        Allows plugins to:
+        - Access event dispatcher
+        - Discover other plugins
+        - Query system state
+
+        Args:
+            manager: PluginManager instance
         """
         pass

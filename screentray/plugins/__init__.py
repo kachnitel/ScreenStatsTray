@@ -1,9 +1,8 @@
 """
-screentray/plugins/__init__.py
-
-Plugin system for ScreenTray.
+Plugin system for ScreenTray with event-driven architecture.
 """
 from .base import PluginBase
 from .manager import PluginManager
+from .events import PluginEvent, EventContext, EventDispatcher
 
-__all__ = ['PluginBase', 'PluginManager']
+__all__ = ['PluginBase', 'PluginManager', 'PluginEvent', 'EventContext', 'EventDispatcher']
