@@ -7,6 +7,7 @@ LOG_INTERVAL: int = 2
 IDLE_THRESHOLD_MS: int = 600_000  # 10 minutes
 SWITCH_MIN_DURATION: int = 5  # seconds
 MAX_NO_EVENT_GAP: int = IDLE_THRESHOLD_MS // 1000  # 10 minutes
+ICON_PULSE_INTERVAL = 10000
 
 # User configuration file path
 USER_CONFIG_PATH: str = os.path.expanduser("~/.config/screentray/settings.json")
