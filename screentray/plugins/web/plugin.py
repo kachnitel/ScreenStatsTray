@@ -174,3 +174,5 @@ class WebPlugin(PluginBase):
             print(f"Web server failed: {e}")
             if self.tray_action:
                 self.tray_action.setToolTip("Failed to start")
+
+        self._update_ui_state()
