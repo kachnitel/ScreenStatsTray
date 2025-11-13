@@ -27,8 +27,8 @@ class PluginBase(ABC):
     Example:
         class MyPlugin(PluginBase):
             def register_events(self, manager: PluginManager) -> None:
-                manager.events.register(
-                    PluginEvent.TRAY_MENU_READY,
+                manager.events.subscribe(
+                    Event.TRAY_READY,
                     self._on_tray_ready
                 )
 
@@ -96,8 +96,8 @@ class PluginBase(ABC):
         Example:
             def register_events(self, manager: PluginManager) -> None:
                 # Register for tray menu event
-                manager.events.register(
-                    PluginEvent.TRAY_MENU_READY,
+                manager.events.subscribe(
+                    Event.TRAY_READY,
                     self._handle_tray_menu
                 )
 

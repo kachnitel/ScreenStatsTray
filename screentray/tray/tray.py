@@ -1,29 +1,69 @@
 """Main system tray application with event-driven plugin system."""
-import subprocess
 import datetime
 import os
-from typing import Optional, List, Tuple, Callable, Dict
+from typing import Optional, List, Tuple, Callable, Dict, Any
+from ..services.notification_service import NotificationService
+from ..services.system_service import SystemService
 from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
-from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor
+from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor, QPalette
 from PyQt5.QtCore import (
     QTimer, Qt, QPropertyAnimation, QEasingCurve, QObject, pyqtProperty, pyqtSignal, QRect # type: ignore
 )
 from .popup import StatsPopup
 from ..config import ICON_PULSE_INTERVAL, settings, NOTIFY_BUTTONS
 from ..services.session_service import SessionService
-from ..plugins.events import PluginEvent, EventContext
+from ..events import Event, EventContext
 from . import config_dialog
 
 ICON_NORMAL = "preferences-desktop-display-randr-symbolic"
 ICON_ALERT = "chronometer-pause-symbolic"
 
+# Centralized configuration for all visual states
+_STATE_CONFIG: Dict[str, Dict[str, Any]] = {
+    "idle": {
+        "icon": ICON_NORMAL,
+        "static_color": None, # Use native theme icon
+        "animation": False
+    },
+    "active": {
+        "icon": ICON_NORMAL,
+        "static_color": None, # Use native theme icon
+        "animation": False
+    },
+    "alert": {
+        "icon": ICON_ALERT,
+        "static_color": QColor("red"),
+        "animation": False
+    },
+    "snooze": {
+        "icon": ICON_ALERT,
+        "start_color": QColor("orange"), # Animation end color
+        "animation": True
+    }
+}
+
 TEST_NOTIFICATION_TRIGGER = os.path.expanduser("~/.local/share/screentracker_test_notify")
+
+
+def get_system_color(role: str = "normal") -> QColor:
+    """Get color from system palette."""
+    app: Optional[QApplication] = QApplication.instance() # pyright: ignore[reportAssignmentType]
+    # Fallback colors if no QApplication or if running in a headless environment
+    if not app:
+        return {"normal": QColor("#3daee9"), "inactive": QColor("#7f8c8d")}.get(role, QColor("#3daee9"))
+
+    palette: QPalette = app.palette()
+    if role == "inactive":
+        return palette.color(QPalette.ColorRole.Mid)
+    else:  # normal/active
+        return palette.color(QPalette.ColorRole.HighlightedText)
+
 
 class IconColor(QObject):
     """Holds the color property for QPropertyAnimation."""
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
-        self._color = QColor("green")
+        self._color: QColor = get_system_color("normal")
 
     def get_color(self) -> QColor:
         return self._color
@@ -31,56 +71,61 @@ class IconColor(QObject):
     def set_color(self, color: QColor) -> None:
         self._color = color
 
-    # Define the 'color' property for use with QPropertyAnimation
-    color = pyqtProperty(QColor, get_color, set_color)
+    color: QColor = pyqtProperty(QColor, get_color, set_color)
+
 
 class TrayIconVisuals(QObject):
-    """Manages the visual state and animation of the tray icon."""
-    icon_updated = pyqtSignal(QIcon)
+    """
+    Manages the visual state and animation of the tray icon.
+    (Single Responsibility: Visual Management)
+    """
+    icon_updated: pyqtSignal = pyqtSignal(QIcon)
 
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
-        self.current_state = "idle"
-        self.icon_color_object = IconColor()
-        self.animation = QPropertyAnimation(self.icon_color_object, b"color")
-        self.animation.setDuration(ICON_PULSE_INTERVAL)  # Example duration
-        self.animation.setLoopCount(-1)  # Loop forever
-        self.animation.setEasingCurve(QEasingCurve.InBounce)
+        self.current_state: str = "idle"
+        self.icon_color_object: IconColor = IconColor()
+        self.animation: QPropertyAnimation = QPropertyAnimation(self.icon_color_object, b"color")
+        self.animation.setDuration(ICON_PULSE_INTERVAL)
+        self.animation.setLoopCount(-1)
+        self.animation.setEasingCurve(QEasingCurve.InBounce) # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
         self.animation.valueChanged.connect(self._emit_animated_icon)
+
+        # Initialize with the base idle icon
+        self.icon_updated.emit(QIcon.fromTheme(ICON_NORMAL))
 
     def _emit_animated_icon(self, color: QColor) -> None:
         """Slot called by animation. Emits the icon based on the current state."""
-        if self.current_state == "snooze":
-            self.icon_updated.emit(self._create_colored_icon(ICON_ALERT, color))
+        # Get the icon name from the centralized config
+        icon_name: str = _STATE_CONFIG.get(self.current_state, {}).get("icon", ICON_NORMAL)
+        self.icon_updated.emit(self._create_colored_icon(icon_name, color))
 
     def _create_colored_icon(self, icon_name: str, color: QColor) -> QIcon:
         """Creates a colored version of the KDE icon."""
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.transparent)
+        pixmap: QPixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent) # pyright: ignore[reportAttributeAccessIssue, reportUnknownArgumentType, reportUnknownMemberType]
 
         # Load the original icon from the theme
-        original_icon = QIcon.fromTheme(icon_name)
-        painter = QPainter(pixmap)
+        original_icon: QIcon = QIcon.fromTheme(icon_name)
+        painter: QPainter = QPainter(pixmap)
 
         # Draw the original icon onto the pixmap
         original_icon.paint(painter, QRect(0, 0, 16, 16))
 
-        # Apply the color overlay
-        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        # Apply the color overlay (SourceIn ensures only existing pixels are colored)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn) # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
         painter.fillRect(pixmap.rect(), color)
         painter.end()
 
         return QIcon(pixmap)
 
-
-    def get_icon(self, state: str, color: str = "red") -> QIcon:
-        """Helper to get a static icon for notifications."""
-        # FIXME: duplicated below
-        if state == "alert":
-            return self._create_colored_icon(ICON_ALERT, QColor("red"))
-        elif state == "snooze":
-            return self._create_colored_icon(ICON_ALERT, QColor("orange"))
-        return self._create_colored_icon(ICON_NORMAL, QColor("green"))
+    def _get_theme_highlight_color(self) -> QColor:
+        """Helper to safely get the theme's highlight color."""
+        app: Optional[QApplication] = QApplication.instance() # pyright: ignore[reportAssignmentType]
+        if app:
+            # Use HighlightedText color for the pulse effect
+            return app.palette().color(QPalette.ColorRole.HighlightedText)
+        return QColor("#3daee9") # Fallback for no QApplication
 
     def set_state(self, state: str) -> None:
         """Sets the visual state of the icon (active, idle, alert, snooze)."""
@@ -90,16 +135,39 @@ class TrayIconVisuals(QObject):
         self.animation.stop()
         self.current_state = state
 
-        if state == "idle":
-            self.icon_updated.emit(self._create_colored_icon(ICON_NORMAL, QColor("gray")))
-        elif state == "active":
-            self.icon_updated.emit(self._create_colored_icon(ICON_NORMAL, QColor("green")))
-        elif state == "alert":
-            self.icon_updated.emit(self._create_colored_icon(ICON_ALERT, QColor("red")))
-        elif state == "snooze":
-            self.animation.setStartValue(QColor("green"))
-            self.animation.setEndValue(QColor("orange"))
+        config: Dict[str, Any] = _STATE_CONFIG.get(state, _STATE_CONFIG["idle"])
+
+        if config.get("animation"):
+            # 1. Setup Animation (DRY: uses centralized config)
+            start_color: QColor = self._get_theme_highlight_color() # Always start from the theme accent
+            end_color: QColor = config["start_color"] # The color to pulse to (e.g., Orange)
+
+            self.animation.setStartValue(start_color)
+            self.animation.setEndValue(end_color)
             self.animation.start()
+
+        elif config.get("static_color"):
+            # 2. Static Colored Icon (DRY: uses centralized config)
+            icon: QIcon = self._create_colored_icon(config["icon"], config["static_color"])
+            self.icon_updated.emit(icon)
+
+        else:
+            # 3. Native Themed Icon (idle/active)
+            self.icon_updated.emit(QIcon.fromTheme(config["icon"]))
+
+    def get_static_icon(self, state: str) -> QIcon:
+        """
+        Provides a static QIcon for use in synchronous operations like QSystemTrayIcon.showMessage().
+        Uses the centralized _STATE_CONFIG.
+        """
+        config: Dict[str, Any] = _STATE_CONFIG.get(state, _STATE_CONFIG["idle"])
+
+        if config.get("static_color"):
+            # Return a colored icon for alert/snooze states
+            return self._create_colored_icon(config["icon"], config["static_color"])
+
+        # Return the native themed icon for idle/active states
+        return QIcon.fromTheme(config["icon"])
 
 class TrayApp:
     """
@@ -108,6 +176,8 @@ class TrayApp:
     """
 
     def __init__(self) -> None:
+        self.notification_service = NotificationService()
+        self.system_service = SystemService()
         self.session_service = SessionService()
         self.popup: StatsPopup = StatsPopup()
         self.notified_threshold = False
@@ -144,15 +214,12 @@ class TrayApp:
     def create_context_menu(self) -> None:
         """
         Create the context menu and emit event for plugins to extend it.
-
-        Plugins can add menu items by registering for TRAY_MENU_READY event:
-            manager.events.register(PluginEvent.TRAY_MENU_READY, handler)
         """
         self.menu = QMenu()
 
         # Emit event for plugins to add items at the top
         self.popup.plugin_manager.events.emit(
-            PluginEvent.TRAY_MENU_READY,
+            Event.TRAY_READY,
             EventContext(menu=self.menu, tray=self, position='top')
         )
 
@@ -247,8 +314,8 @@ class TrayApp:
             if is_snoozing:
                 self.visuals.set_state("snooze")
                 self.notified_threshold = True  # Don't send notifications
-                snooze_left = (self.snooze_until - datetime.datetime.now()).total_seconds() / 60
-                tooltip += f"\nStatus: Snoozed ({int(snooze_left)} min left)"
+                snooze_left = (self.snooze_until - datetime.datetime.now()).total_seconds() / 60 # pyright: ignore[reportUnknownMemberType, reportOptionalOperand, reportUnknownVariableType] Covered in is_snoozed
+                tooltip += f"\nStatus: Snoozed ({int(snooze_left)} min left)" # pyright: ignore[reportUnknownArgumentType]
 
             elif session_m >= settings.alert_session_minutes:
                 self.visuals.set_state("alert")
@@ -291,10 +358,11 @@ class TrayApp:
         if NOTIFY_BUTTONS.get("lock_screen", False):
             actions.append(("Lock Screen", self.lock_screen))
 
-        # Use new visual class to get icon
-        alert_icon = self.visuals.get_icon("alert", "red")
+        # --- UPDATE: Use state name, as the logic for color/icon name is internal ---
+        alert_icon = self.visuals.get_static_icon("alert")
 
-        if not self._notify_plasma(title, message, ICON_ALERT, actions): # Use theme icon name for DBus
+        # Use theme icon name for DBus. The colored version is for the QSystemTrayIcon fallback.
+        if not self._notify_plasma(title, message, ICON_ALERT, actions):
             self.tray_icon.showMessage(title, message + "\n\nClick for actions.",
                                       alert_icon, 0)
 
@@ -314,8 +382,8 @@ class TrayApp:
         if NOTIFY_BUTTONS.get("lock_screen", False):
             actions.append(("Test Lock", lambda: print("Test: Lock clicked")))
 
-
-        active_icon = self.visuals.get_icon("active", "green")
+        # --- UPDATE: Use state name, remove color argument ---
+        active_icon = self.visuals.get_static_icon("active")
 
         if not self._notify_plasma(title, message, ICON_NORMAL, actions):
             self.tray_icon.showMessage(title, message, active_icon, 5000)
@@ -323,39 +391,17 @@ class TrayApp:
     def _notify_plasma(self, title: str, message: str, icon: str,
                       actions: Optional[List[Tuple[str, Callable[[], None]]]] = None) -> bool:
         """Send KDE Plasma notification via DBus."""
-        try:
-            import dbus  # type: ignore[import-untyped]
-            import dbus.mainloop.glib  # type: ignore[import-untyped]
 
-            dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)  # type: ignore[reportUnknownMemberType]
-            bus: dbus.SessionBus = dbus.SessionBus()  # type: ignore[reportUnknownMemberType]
-            obj = bus.get_object("org.freedesktop.Notifications", # pyright: ignore[reportUnknownMemberType]
-                               "/org/freedesktop/Notifications")  # type: ignore[reportUnknownMemberType]
-            interface = dbus.Interface(obj, "org.freedesktop.Notifications")  # type: ignore[reportUnknownMemberType]
-
-            action_list: List[str] = []
-            action_callbacks: Dict[str, Callable[[], None]] = {}
-
-            if actions:
-                for label, callback in actions:
-                    key = label.lower().replace(" ", "_")
-                    action_list += [key, label]
-                    action_callbacks[key] = callback
-
-            def on_action_invoked(nid: int, action_key: str) -> None:
-                if action_key in action_callbacks:
-                    action_callbacks[action_key]()
-
-            bus.add_signal_receiver(on_action_invoked, signal_name="ActionInvoked",  # type: ignore[reportUnknownMemberType]
-                                  dbus_interface="org.freedesktop.Notifications")
-            self._dbus_signal_handler = on_action_invoked
-
-            interface.Notify("ScreenTracker", 0, icon, title, message,  # type: ignore[reportUnknownMemberType]
-                           action_list, {}, 0)
-            return True
-        except Exception as e:
-            print(f"DBus notification failed: {e}")
+        if not self.notification_service.notify(title, message,
+                                                icon=icon, # Use the icon string passed
+                                                actions=actions, timeout=5000):
+            # Fallback to standard tray message
+            # --- UPDATE: Use state name, remove color argument ---
+            fallback_icon = self.visuals.get_static_icon("active")
+            self.tray_icon.showMessage(title, message, fallback_icon, 5000)
             return False
+
+        return True
 
     def snooze_notification(self) -> None:
         """Snooze notification for configured duration."""
@@ -363,21 +409,23 @@ class TrayApp:
             minutes=settings.snooze_minutes)
         print(f"Snoozed until {self.snooze_until.isoformat()}")
         self.update_status() # Immediately update to "snooze" state
+
+        # --- UPDATE: Use state name, remove color argument ---
         self.tray_icon.showMessage("Snoozed",
                                   f"Alert snoozed for {settings.snooze_minutes} minutes",
-                                  self.visuals.get_icon("snooze"), 3000)
+                                  self.visuals.get_static_icon("snooze"), 3000)
 
     def system_suspend(self) -> None:
         """Suspend the system."""
-        subprocess.run(["systemctl", "suspend", "--check-inhibitors=no"], check=False)
+        self.system_service.suspend()
 
     def screen_off(self) -> None:
         """Turn off the screen."""
-        subprocess.run(["xset", "dpms", "force", "off"], check=False)
+        self.system_service.screen_off()
 
     def lock_screen(self) -> None:
         """Lock the screen."""
-        subprocess.run(["loginctl", "lock-session"], check=False)
+        self.system_service.lock_screen()
 
     def quit_app(self) -> None:
         """Quit the application."""

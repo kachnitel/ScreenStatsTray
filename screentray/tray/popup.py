@@ -10,7 +10,7 @@ from .activity_bar import ActivityBar
 from ..services.stats_service import StatsService
 from ..services.session_service import SessionService
 from ..plugins import PluginManager
-from ..plugins.events import PluginEvent, EventContext
+from ..events import Event, EventContext
 
 
 class StatsPopup(QWidget):
@@ -71,7 +71,7 @@ class StatsPopup(QWidget):
 
         # Emit event for plugins to add buttons/widgets
         self.plugin_manager.events.emit(
-            PluginEvent.POPUP_READY,
+            Event.POPUP_READY,
             EventContext(popup=self, layout=self.main_layout)
         )
 

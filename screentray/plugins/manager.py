@@ -5,7 +5,7 @@ import os
 import importlib
 from typing import Optional, List
 from .base import PluginBase
-from .events import EventDispatcher#, PluginEvent, EventContext
+from ..events import event_bus#, Event, EventContext
 
 
 class PluginManager:
@@ -24,7 +24,7 @@ class PluginManager:
 
         # Emit event for plugins to handle
         manager.events.emit(
-            PluginEvent.TRAY_MENU_READY,
+            Event.TRAY_READY,
             EventContext(menu=menu, tray=self)
         )
     """
@@ -32,7 +32,7 @@ class PluginManager:
     def __init__(self) -> None:
         self.plugins: dict[str, PluginBase] = {}
         self._active_state: str = "inactive"
-        self.events = EventDispatcher()
+        self.events = event_bus
 
     def discover_plugins(self) -> None:
         """

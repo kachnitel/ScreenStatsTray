@@ -49,37 +49,20 @@ echo "Initializing/updating SQLite database..."
 python3 -m screentray.db_init
 
 # --- 3. Plugin Installation ---
+# TODO:
 echo "Checking for plugins..."
 
-# App tracker plugin
-if [[ "$INSTALL_APPTRACK_FLAG" == true ]]; then
-    INSTALL_APPTRACK="y"
-else
-    echo
-    read -p "Do you want to install the Application Tracker plugin? [y/N]: " INSTALL_APPTRACK
-fi
-
-if [[ "$INSTALL_APPTRACK" =~ ^[Yy]$ ]]; then
-    echo "Installing Application Tracker plugin..."
-    # Plugin installation is handled by the plugin system on first run
-    # Just create a marker file to indicate it should be enabled
-    mkdir -p "$HOME/.config/screentray"
-    echo "app_tracker" >> "$HOME/.config/screentray/enabled_plugins.txt"
-    echo "✅ Application Tracker plugin will be installed on first run"
-else
-    echo "Skipping Application Tracker plugin."
-fi
 
 # --- 4. Wrapper Scripts ---
 echo "Creating wrapper scripts in $BIN..."
 cat > "$BIN/screentracker" <<'EOF'
 #!/bin/bash
-exec python3 -m screentray.screentracker "$@"
+exec python3 -m screentray.tracker.main "$@"
 EOF
 
 cat > "$BIN/screentray" <<'EOF'
 #!/bin/bash
-exec python3 -m screentray.main "$@"
+exec python3 -m screentray.tray.main "$@"
 EOF
 
 chmod +x "$BIN/screentracker" "$BIN/screentray"
@@ -113,45 +96,6 @@ else
 fi
 
 echo "Tracker logs to ~/.local/share/screentracker.db"
-
-# --- 6. Optional Web Interface ---
-if [[ "$INSTALL_WEB_FLAG" == true ]]; then
-    INSTALL_WEB="y"
-else
-    echo
-    read -p "Do you want to install the optional ScreenStats Web interface? [y/N]: " INSTALL_WEB
-fi
-
-if [[ "$INSTALL_WEB" =~ ^[Yy]$ ]]; then
-    WEB_SVC="screenstats-web"
-    echo "Checking for Flask dependency..."
-    if ! python3 -c "import flask" 2>/dev/null; then
-        echo "❌ Flask not found. Install with:"
-        echo "  pip install flask"
-        echo "Aborting web interface installation."
-    else
-        echo "✅ Flask found."
-
-        if [[ ! -f "$SERVICE_SRC/$WEB_SVC.service" ]]; then
-            echo "Error: Web service file not found at $SERVICE_SRC/$WEB_SVC.service"
-        else
-            if [[ "$DEV_MODE" == true ]]; then
-                ln -sf "$(realpath "$SERVICE_SRC/$WEB_SVC.service")" "$SYSTEMD_USER/"
-            else
-                cp "$SERVICE_SRC/$WEB_SVC.service" "$SYSTEMD_USER/"
-            fi
-
-            systemctl --user daemon-reload
-            systemctl --user enable --now $WEB_SVC.service
-
-            echo
-            echo "✅ Web UI service enabled. Check logs: systemctl --user status $WEB_SVC.service"
-            echo "It runs at port 5050 by default, see the service file for details."
-        fi
-    fi
-else
-    echo "Skipping web interface installation."
-fi
 
 echo
 echo "✅ Installation complete."

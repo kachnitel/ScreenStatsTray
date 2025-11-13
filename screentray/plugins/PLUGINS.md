@@ -205,14 +205,6 @@ def api_stats(self):
     return jsonify({"data": "value"})
 ```
 
-## Configuration
-
-Plugin state is tracked in `~/.config/screentray/enabled_plugins.txt`:
-
-```
-app_tracker
-```
-
 ## Best Practices
 
 1. **Minimal Impact**: Plugins should be lightweight and not block the main loop

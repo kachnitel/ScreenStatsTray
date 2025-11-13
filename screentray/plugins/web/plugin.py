@@ -8,7 +8,7 @@ from typing import Any, Optional
 from PyQt5.QtWidgets import QAction, QPushButton
 from ..base import PluginBase
 from ..manager import PluginManager
-from ..events import PluginEvent, EventContext
+from ...events import Event, EventContext
 from . import PLUGIN_INFO
 
 
@@ -46,8 +46,8 @@ class WebPlugin(PluginBase):
         - TRAY_MENU_READY: Add "Open Web Dashboard" menu item
         - POPUP_READY: Add "Open Web Dashboard" button
         """
-        manager.events.register(PluginEvent.TRAY_MENU_READY, self._on_tray_menu_ready)
-        manager.events.register(PluginEvent.POPUP_READY, self._on_popup_ready)
+        manager.events.subscribe(Event.TRAY_READY, self._on_tray_menu_ready)
+        manager.events.subscribe(Event.POPUP_READY, self._on_popup_ready)
 
     def install(self) -> None:
         """No installation needed."""

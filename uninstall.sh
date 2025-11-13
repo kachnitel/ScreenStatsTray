@@ -3,7 +3,7 @@ set -e
 echo "Uninstalling ScreenTrackerTray..."
 
 # Service file names
-SERVICES="screentracker.service screentray.service screenstats-web.service"
+SERVICES="screentracker.service screentray.service"
 BINS="screentracker screentray"
 
 # Stop and disable systemd services

@@ -6,16 +6,16 @@ import os
 import time
 import subprocess
 import datetime
-from .config import (
+from ..config import (
     DB_PATH,
     LOG_INTERVAL,
     IDLE_THRESHOLD_MS,
     DEBUG_MODE,
     DEBUG_LOG_PATH
 )
-from .db import ensure_db_exists
-from .db.event_repository import EventRepository
-from .plugins import PluginManager
+from ..db import ensure_db_exists
+from ..db.event_repository import EventRepository
+from ..plugins import PluginManager
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 IDLE_THRESHOLD_SEC = IDLE_THRESHOLD_MS / 1000.0
