@@ -74,14 +74,19 @@ class ActivityService:
                 last_ts = event_ts
                 last_state = new_state
 
-        # Add final period up to period_end
-        duration = (period_end - last_ts).total_seconds()
-        if duration > 0:
-            periods.append({
-                "start": last_ts,
-                "end": period_end,
-                "state": last_state,
-                "duration_seconds": duration
-            })
+        # For today, 'now' is earlier than 'period_end', so 'now' is used.
+        now = datetime.datetime.now()
+        effective_end = min(period_end, now)
+
+        # Add final period up to the effective_end
+        if last_ts < effective_end:
+            duration = (effective_end - last_ts).total_seconds()
+            if duration > 0:
+                periods.append({
+                    "start": last_ts,
+                    "end": effective_end,
+                    "state": last_state,
+                    "duration_seconds": duration
+                })
 
         return periods

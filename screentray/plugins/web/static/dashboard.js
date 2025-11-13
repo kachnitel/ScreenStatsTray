@@ -191,10 +191,6 @@ async function loadDailyView() {
       <p style="font-size:1.5em;margin:5px 0;">${formatDuration(stats.active_seconds)}</p>
     </article>
     <article>
-      <h4>Inactive Time</h4>
-      <p style="font-size:1.5em;margin:5px 0;">${formatDuration(stats.inactive_seconds)}</p>
-    </article>
-    <article>
       <h4>Events</h4>
       ${Object.entries(stats.event_counts).map(([type, count]) =>
         `<p>${type}: ${count}</p>`

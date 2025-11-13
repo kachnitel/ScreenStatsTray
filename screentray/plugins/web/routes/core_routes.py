@@ -6,6 +6,8 @@ import sqlite3
 import datetime
 import os
 from typing import Any, List, Dict, Optional
+from ....services import StatsService
+
 
 DB_PATH = os.path.expanduser("~/.local/share/screentracker.db")
 INACTIVE_TYPES = ("idle_start", "screen_off")
@@ -14,6 +16,9 @@ ACTIVE_TYPES = ("idle_end", "screen_on")
 
 def register_routes(app: Flask) -> None:
     """Register core API routes with Flask app."""
+
+    stats_service = StatsService()
+    # activity_service = ActivityService()
 
     @app.route("/api/events")
     def api_events() -> Any: # pyright: ignore[reportUnusedFunction]
@@ -30,6 +35,7 @@ def register_routes(app: Flask) -> None:
     def api_periods() -> Any: # pyright: ignore[reportUnusedFunction]
         try:
             hours = int(request.args.get("hours", "24"))
+            # REVIEW: This route uses its own custom logic from get_periods_with_events
             return jsonify(get_periods_with_events(hours))
         except FileNotFoundError as e:
             return jsonify({"error": str(e)}), 404
@@ -37,7 +43,7 @@ def register_routes(app: Flask) -> None:
     @app.route("/api/stats/<day_str>")
     def api_daily_stats(day_str: str) -> Any: # pyright: ignore[reportUnusedFunction]
         try:
-            return jsonify(get_daily_stats(day_str))
+            return jsonify(get_daily_stats(stats_service, day_str))
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -72,9 +78,9 @@ def list_events(limit: int = 200, offset: int = 0, query: Optional[str] = None) 
             """, (limit, offset))
         return [dict(r) for r in cur.fetchall()]
 
-
+#REVIEW: Deprecate
 def get_periods_with_events(hours: int = 24) -> List[Dict[str, Any]]:
-    """Get activity periods with all events within each period."""
+    """Get activity periods with all events within last 24hr period."""
     now = datetime.datetime.now()
     since = now - datetime.timedelta(hours=hours)
 
@@ -217,7 +223,7 @@ def get_periods_with_events(hours: int = 24) -> List[Dict[str, Any]]:
     return periods
 
 
-def get_daily_stats(day_str: str) -> Dict[str, Any]:
+def get_daily_stats(stats_service: StatsService, day_str: str) -> Dict[str, Any]:
     """Get statistics for a specific day."""
     day = datetime.date.fromisoformat(day_str)
     start = datetime.datetime.combine(day, datetime.time.min)
@@ -234,11 +240,11 @@ def get_daily_stats(day_str: str) -> Dict[str, Any]:
 
         event_counts = {row["type"]: row["count"] for row in cur.fetchall()}
 
-    periods = get_periods_with_events(hours=24)
-    active_sec = sum(p["duration_sec"] for p in periods if p["state"] == "active" and
-                     start.isoformat() <= p["start"] <= end.isoformat())
-    inactive_sec = sum(p["duration_sec"] for p in periods if p["state"] == "inactive" and
-                       start.isoformat() <= p["start"] <= end.isoformat())
+    # Call the StatsService to get the correct totals for the requested day.
+    totals = stats_service.get_daily_totals(day_str)
+
+    active_sec = totals.get("active", 0.0)
+    inactive_sec = totals.get("inactive", 0.0)
 
     return {
         "date": day_str,
