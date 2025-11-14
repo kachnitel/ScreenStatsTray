@@ -4,36 +4,54 @@
 <meta charset="utf-8">
 <title>ScreenTracker — Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-
 <link rel="stylesheet" href="pico.min.css">
 <link rel="stylesheet" href="dashboard.css">
-
 </head>
 <body>
 
 <nav class="container-fluid">
   <ul>
-    <li><h2 style="margin:0;">ScreenTracker</h2></li>
+    <li><h3 style="margin:0;">ScreenTracker</h3></li>
   </ul>
   <ul id="tab-nav-list" class="tabs">
-    <li><a href="#" role="button" data-tab="overview" aria-current="page">Overview</a></li>
-    <li><a href="#" role="button" data-tab="daily">Daily</a></li>
+    <li><a href="#" role="button" data-tab="daily" aria-current="page">Daily</a></li>
+    <li><a href="#" role="button" data-tab="overview">Periods</a></li>
     <li><a href="#" role="button" data-tab="weekly">Weekly</a></li>
     <li><a href="#" role="button" data-tab="events">Events</a></li>
   </ul>
-</nav>
-
-
-<main class="container">
-
-  <section class="tab-content active" id="overview">
-    <div class="grid">
-      <button id="refresh">Refresh</button>
-      <select id="theme">
-        <option value="system">System Theme</option>
+  <ul style="padding: 0;">
+    <li style="padding: 0.5rem;">
+      <select id="theme" style="font-size: 0.85rem;">
+        <option value="system">Auto</option>
         <option value="light">Light</option>
         <option value="dark">Dark</option>
       </select>
+    </li>
+  </ul>
+</nav>
+
+<main class="container">
+
+  <section class="tab-content active" id="daily">
+    <div class="grid" style="gap: 0.5rem;">
+      <input type="date" id="daily-date">
+      <button id="daily-prev" class="outline secondary">← Prev</button>
+      <button id="daily-next" class="outline secondary">Next →</button>
+    </div>
+
+    <div class="grid" id="daily-stats" style="gap: 0.5rem;"></div>
+
+    <article class="chart">
+      <h3>Activity by Hour</h3>
+      <div class="bar-chart" id="hourly-chart"></div>
+    </article>
+  </section>
+
+  <!-- CONTENT_SLOT: daily_bottom -->
+
+  <section class="tab-content" id="overview">
+    <div class="grid" style="gap: 0.5rem;">
+      <button id="refresh" class="secondary">Refresh</button>
       <select id="hours">
         <option value="24">Last 24h</option>
         <option value="12">Last 12h</option>
@@ -45,16 +63,16 @@
     <aside id="current-stats"></aside>
 
     <div class="overview-layout">
-
       <section>
         <h4>Activity Periods</h4>
-        <div class="grid" style="grid-template-columns: 1fr auto 1fr; padding:0;">
-          <button id="prev-period" class="outline">← Prev</button>
-          <span id="period-index" style="text-align:center;line-height:2.5rem;">-</span>
-          <button id="next-period" class="outline">Next →</button>
+        <div class="grid" style="grid-template-columns: 1fr auto 1fr; padding:0; gap: 0.25rem;">
+          <button id="prev-period" class="outline secondary">← Prev</button>
+          <span id="period-index" style="text-align:center;line-height:2rem;font-size:0.9rem;">-</span>
+          <button id="next-period" class="outline secondary">Next →</button>
         </div>
         <div id="periods-container">
-            <div id="periods"></div>
+          <div id="periods"></div>
+          <div id="periods-loader" style="display:none;text-align:center;padding:1rem;opacity:0.7;">Loading more...</div>
         </div>
       </section>
 
@@ -62,48 +80,27 @@
         <h4>Period Details</h4>
         <div id="detail-content"></div>
       </article>
-
     </div>
   </section>
 
   <!-- CONTENT_SLOT: overview_bottom -->
 
-  <section class="tab-content" id="daily">
-    <div class="grid">
-      <input type="date" id="daily-date">
-      <button id="daily-prev" class="outline">← Prev Day</button>
-      <button id="daily-next" class="outline">Next Day →</button>
-    </div>
-
-    <div class="grid" id="daily-stats">
-      </div>
-
-    <article class="chart">
-      <h3>Activity by Hour</h3>
-      <div class="bar-chart" id="hourly-chart"></div>
-    </article>
-  </section>
-
-  <!-- CONTENT_SLOT: daily_bottom -->
-
   <section class="tab-content" id="weekly">
-    <div class="grid">
-      <button id="week-prev" class="outline">← Prev Week</button>
-      <span id="week-label" style="text-align:center;line-height:2.5rem;"></span>
-      <button id="week-next" class="outline">Next Week →</button>
+    <div class="grid" style="gap: 0.5rem;">
+      <button id="week-prev" class="outline secondary">← Prev Week</button>
+      <span id="week-label" style="text-align:center;line-height:2rem;"></span>
+      <button id="week-next" class="outline secondary">Next Week →</button>
     </div>
 
     <div class="weekly-viz-container">
       <article>
         <h3>Activity Summary</h3>
-        <div class="weekly-calendar-grid" id="weekly-day-summaries">
-          </div>
+        <div class="weekly-calendar-grid" id="weekly-day-summaries"></div>
       </article>
 
       <article class="chart">
         <h3>Weekly Active Time Graph</h3>
-        <div class="bar-chart" id="weekly-bar-chart">
-          </div>
+        <div class="bar-chart" id="weekly-bar-chart"></div>
       </article>
     </div>
   </section>
@@ -111,9 +108,9 @@
   <!-- CONTENT_SLOT: weekly_bottom -->
 
   <section class="tab-content" id="events">
-    <div class="grid">
+    <div class="grid" style="gap: 0.5rem;">
       <input id="event-search" placeholder="Search events..."/>
-      <button id="event-search-btn">Search</button>
+      <button id="event-search-btn" class="secondary">Search</button>
       <select id="event-limit">
         <option value="50">50</option>
         <option value="100">100</option>

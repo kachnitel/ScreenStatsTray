@@ -2,13 +2,13 @@
   --primary: #2e8b57;
 } */
 
-/* ========== NAVIGATION TABS (FIXED FOR PICO) ========== */
 nav {
   position: sticky;
   top: 0;
   z-index: 100;
   background: var(--pico-background-color);
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  padding: 0.5rem 0;
 }
 
 nav ul.tabs {
@@ -27,7 +27,7 @@ nav ul.tabs li {
 
 nav ul.tabs a[role="button"] {
   display: block;
-  padding: 0.6rem 1rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--pico-card-border-color);
   border-bottom: none;
   background: var(--pico-card-background-color);
@@ -36,6 +36,7 @@ nav ul.tabs a[role="button"] {
   border-top-left-radius: var(--pico-border-radius);
   border-top-right-radius: var(--pico-border-radius);
   transition: background 0.2s, color 0.2s;
+  font-size: 0.9rem;
 }
 
 nav ul.tabs a[role="button"]:hover {
@@ -50,7 +51,6 @@ nav ul.tabs a[aria-current="page"] {
   font-weight: bold;
 }
 
-/* Hide inactive sections cleanly */
 .tab-content {
   display: none;
 }
@@ -58,41 +58,59 @@ nav ul.tabs a[aria-current="page"] {
   display: block;
 }
 
-/* FIX: Ensure the tab list remains contained and readable */
-#tab-nav-list {
-  min-width: 400px;
+/* Compact grid spacing */
+.grid {
+  gap: 0.5rem;
 }
 
-/* ========== OVERVIEW LAYOUT ========== */
+/* Compact main content */
+main {
+  padding-block: 1rem;
+}
+
+section {
+  margin-bottom: 1rem;
+}
+
+article {
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+h3, h4 {
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+/* Overview layout */
 .overview-layout {
   display: grid;
   grid-template-columns: 2fr 3fr;
-  gap: var(--pico-grid-spacing-horizontal);
+  gap: 1rem;
   align-items: flex-start;
 }
 
-/* Periods container styling */
 #periods-container {
   background: var(--pico-card-background-color);
   border: 1px solid var(--pico-card-border-color);
-  padding: var(--pico-spacing);
+  padding: 0.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 #periods {
-  max-height: 60vh;
-  overflow-y: auto;
   padding: 0;
 }
 
-/* Current stats — moved below filters, not top corner */
+/* Compact current stats */
 #current-stats {
   position: relative;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
   margin-bottom: 0.5rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
-  font-size: 0.9em;
+  gap: 1rem;
+  font-size: 0.85rem;
   justify-content: flex-end;
 }
 
@@ -106,19 +124,21 @@ nav ul.tabs a[aria-current="page"] {
   font-weight: normal;
   opacity: 0.8;
   margin-right: 0.5rem;
+  font-size: 0.85rem;
 }
 
 #current-stats p {
   font-weight: bold;
 }
 
-/* Period list */
+/* Compact period cards */
 .period {
   cursor: pointer;
-  padding: var(--pico-spacing);
+  padding: 0.5rem;
   border-bottom: 1px solid var(--pico-card-border-color);
   background: none;
   transition: background-color 0.2s;
+  font-size: 0.85rem;
 }
 
 .period:last-child {
@@ -126,11 +146,11 @@ nav ul.tabs a[aria-current="page"] {
 }
 
 .period[data-state="active"] {
-  border-left: 5px solid var(--pico-primary);
+  border-left: 3px solid var(--pico-primary);
 }
 
 .period[data-state="inactive"] {
-  border-left: 5px solid var(--pico-muted-color);
+  border-left: 3px solid var(--pico-muted-color);
 }
 
 .period:hover {
@@ -139,7 +159,7 @@ nav ul.tabs a[aria-current="page"] {
 }
 
 .period.selected {
-  box-shadow: inset 0 0 0 3px var(--pico-primary-hover);
+  box-shadow: inset 0 0 0 2px var(--pico-primary-hover);
   border-color: var(--pico-primary-hover);
   font-weight: bold;
 }
@@ -148,15 +168,16 @@ nav ul.tabs a[aria-current="page"] {
   font-weight: bold;
   display: flex;
   justify-content: space-between;
+  margin-bottom: 0.25rem;
 }
 
-/* ========== BAR CHART ========== */
+/* Compact bar charts */
 .bar-chart {
   display: flex;
   align-items: flex-end;
-  height: 200px;
+  height: 180px;
   gap: 2px;
-  margin-top: var(--pico-spacing);
+  margin-top: 0.5rem;
 }
 
 .bar {
@@ -173,44 +194,44 @@ nav ul.tabs a[aria-current="page"] {
 
 .bar-label {
   position: absolute;
-  bottom: -25px;
+  bottom: -20px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.8em;
+  font-size: 0.75em;
   white-space: nowrap;
 }
 
 .bar-value {
   position: absolute;
-  top: -20px;
+  top: -18px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.8em;
+  font-size: 0.75em;
   font-weight: bold;
 }
 
-/* ========== WEEKLY VIEW ========== */
+/* Weekly view */
 .weekly-viz-container {
   display: flex;
   flex-direction: column;
-  gap: var(--pico-spacing);
-  margin-top: var(--pico-spacing);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .weekly-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 5px;
+  gap: 4px;
 }
 
 .day-summary-cell {
-  padding: 10px 5px;
+  padding: 8px 4px;
   border: 1px solid var(--pico-card-border-color);
   background: var(--pico-card-background-color);
   text-align: center;
   cursor: pointer;
   transition: background 0.2s;
-  font-size: 0.9em;
+  font-size: 0.85em;
 }
 
 .day-summary-cell:hover {
@@ -221,16 +242,52 @@ nav ul.tabs a[aria-current="page"] {
   border: 2px solid var(--pico-primary);
 }
 
-.day-summary-cell.selected-day {
-  box-shadow: 0 0 0 3px var(--pico-primary-hover);
-}
-
 .day-summary-cell .day-name {
   font-weight: bold;
   display: block;
+  font-size: 0.9em;
+}
+
+.day-summary-cell .date {
+  font-size: 0.85em;
+  opacity: 0.8;
 }
 
 .day-summary-cell .duration {
   font-size: 0.8em;
   opacity: 0.8;
+}
+
+/* Compact buttons */
+button, input {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.75rem;
+}
+
+select {
+  font-size: 0.9rem;
+  padding-left: 0.5rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+button.secondary, button.outline.secondary {
+  --pico-font-size: 0.85rem;
+}
+
+/* Event list */
+.event-list article {
+  padding: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.85em;
+}
+
+/* Period detail events toggle */
+.toggle-btn {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.hidden {
+  display: none;
 }
