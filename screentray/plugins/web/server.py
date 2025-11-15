@@ -53,15 +53,24 @@ def create_app(plugins_with_web: List[Any]) -> Flask:
         html = inject_plugin_content(html, plugins_with_web)
         return Response(html, mimetype='text/html')
 
+    @app.route("/debug")
+    def debug() -> Response:  # pyright: ignore[reportUnusedFunction]
+        """Serve debug dashboard."""
+        html = load_static_file("debug.html")
+        return Response(html, mimetype='text/html')
+
     return app
+
+def load_static_file(filename: str) -> str:
+    """Load a file from the static directory."""
+    file_path = os.path.join(os.path.dirname(__file__), "static", filename)
+    with open(file_path, 'r') as f:
+        return f.read()
 
 
 def load_template() -> str:
     """Load the main dashboard HTML template."""
-    template_path = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
-    with open(template_path, 'r') as f:
-        return f.read()
-
+    return load_static_file("dashboard.html")
 
 def inject_plugin_content(html: str, plugins: List[Any]) -> str:
     """

@@ -76,7 +76,7 @@ class WebPlugin(PluginBase):
             )
 
     def _on_tray_menu_ready(self, ctx: EventContext) -> None:
-        """Create menu item, check server async."""
+        """Create menu items, check server async."""
         menu = ctx.menu
 
         # Create disabled menu item immediately
@@ -93,7 +93,7 @@ class WebPlugin(PluginBase):
             menu.addAction(self.tray_action)
             menu.addSeparator()
 
-        # Start server in background, update menu when ready
+        # Start server in background
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(0, self._start_server_async)
 
