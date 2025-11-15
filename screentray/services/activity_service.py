@@ -171,11 +171,12 @@ class ActivityService:
                 elif "state=inactive" in event.detail:
                     new_state = "inactive"
                 else:
+                    # Non-state poll - add to current period
                     current_events.append(event_dict)
                     last_event_ts = ts
                     continue
             else:
-                # Non-state-changing event (e.g., app_switch)
+                # Non-state event (tracker_start, tracker_stop) - add to current period
                 current_events.append(event_dict)
                 last_event_ts = ts
                 continue
@@ -239,5 +240,8 @@ class ActivityService:
                 "trigger_event": None,
                 "events": current_events
             })
+
+        # REVIEW: Filter out zero-duration periods (tracker restart artifacts)
+        periods = [p for p in periods if p["duration_sec"] > 0]
 
         return periods
