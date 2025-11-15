@@ -3,7 +3,6 @@ let periods = [];
 let selectedIndex = -1;
 let periodsDisplayed = 20;
 
-// Tab switching
 function setupTabSwitching() {
   document.querySelectorAll('#tab-nav-list a[role="button"]').forEach(tab => {
     tab.onclick = (e) => {
@@ -13,14 +12,13 @@ function setupTabSwitching() {
       tab.setAttribute("aria-current", "page");
       const targetId = tab.dataset.tab;
       document.getElementById(targetId).classList.add("active");
-      
+
       if (targetId === "periods") loadPeriods();
       if (targetId === "events") loadEventsList();
     };
   });
 }
 
-// Format helpers
 function formatDuration(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -34,12 +32,22 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString();
 }
 
-// PERIODS TAB
+function extractScreenState(events) {
+  // Find last poll event with screen state
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === 'poll' && events[i].detail) {
+      const match = events[i].detail.match(/screen=(on|off)/);
+      if (match) return match[1];
+    }
+  }
+  return 'unknown';
+}
+
 async function loadPeriods() {
   const hours = document.getElementById("hours").value;
   const resp = await fetch(`${API}/periods?hours=${hours}`);
   const data = await resp.json();
-  
+
   periods = data.reverse();
   periodsDisplayed = 20;
 
@@ -67,9 +75,13 @@ function renderPeriods() {
     div.dataset.state = p.state;
     div.onclick = () => selectPeriod(idx);
 
+    const screenState = extractScreenState(p.events || []);
+    const stateIcon = p.state === 'active' ? '●' : '○';
+    const screenIcon = screenState === 'on' ? '🖥' : screenState === 'off' ? '⬛' : '';
+
     div.innerHTML = `
       <div class="period-header">
-        <span>${p.state.toUpperCase()}</span>
+        <span>${stateIcon} ${p.state.toUpperCase()} ${screenIcon}</span>
         <span>${formatDuration(p.duration_sec)}</span>
       </div>
       <div style="font-size:0.85em;opacity:0.7;">
@@ -104,7 +116,6 @@ function updateCurrentStats() {
   `;
 }
 
-// Infinite scroll
 document.getElementById("periods-container").addEventListener("scroll", (e) => {
   const el = e.target;
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) {
@@ -130,8 +141,11 @@ function selectPeriod(idx) {
   const details = document.getElementById("period-details");
   const content = document.getElementById("detail-content");
 
+  const screenState = extractScreenState(p.events || []);
+
   let html = `
     <p style="margin: 0.25rem 0;"><strong>State:</strong> ${p.state}</p>
+    <p style="margin: 0.25rem 0;"><strong>Screen:</strong> ${screenState}</p>
     <p style="margin: 0.25rem 0;"><strong>Duration:</strong> ${formatDuration(p.duration_sec)}</p>
     <p style="margin: 0.25rem 0;"><strong>Start:</strong> ${formatTime(p.start)}</p>
     <p style="margin: 0.25rem 0;"><strong>End:</strong> ${formatTime(p.end)}</p>
@@ -173,7 +187,6 @@ function togglePeriodEvents(event) {
     : `Hide Events (${periods[selectedIndex].events.length})`;
 }
 
-// EVENTS TAB
 async function loadEventsList(q = "") {
   const limit = document.getElementById("event-limit").value;
   const resp = await fetch(`${API}/events?limit=${limit}&offset=0${q ? "&q=" + encodeURIComponent(q) : ""}`);
@@ -182,10 +195,16 @@ async function loadEventsList(q = "") {
   const container = document.getElementById("event-list");
   container.innerHTML = "";
 
+  const stateEvents = ['idle_start', 'idle_end', 'screen_off', 'screen_on'];
+
   events.forEach(e => {
+    const isStateChange = stateEvents.includes(e.type);
+    const borderColor = isStateChange ? 'var(--pico-primary)' : 'var(--pico-muted-color)';
+    const bgColor = isStateChange ? 'rgba(var(--pico-primary-rgb), 0.1)' : 'transparent';
+
     const div = document.createElement("div");
     div.innerHTML = `
-      <article style="padding: 0.5rem; margin-bottom: 0.25rem; font-family: monospace; font-size: 0.85em;">
+      <article style="padding: 0.5rem; margin-bottom: 0.25rem; font-family: monospace; font-size: 0.85em; border-left: 3px solid ${borderColor}; background: ${bgColor};">
         <strong>${e.type}</strong> @ ${e.timestamp}
         ${e.detail ? `<br><span style="opacity:0.7">${e.detail}</span>` : ''}
       </article>
