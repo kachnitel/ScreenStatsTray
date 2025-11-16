@@ -13,6 +13,7 @@ from .popup import StatsPopup
 from ..config import ICON_PULSE_INTERVAL, settings, NOTIFY_BUTTONS
 from ..services.session_service import SessionService
 from ..events import Event, EventContext
+from ..plugins import PluginManager
 from . import config_dialog
 
 ICON_NORMAL = "preferences-desktop-display-randr-symbolic"
@@ -172,17 +173,30 @@ class TrayIconVisuals(QObject):
 class TrayApp:
     """
     Main system tray application.
-    Provides base tray functionality and emits events for plugins.
+    Owns plugin lifecycle for UI process and coordinates UI extensions.
     """
 
     def __init__(self) -> None:
         self.notification_service = NotificationService()
         self.system_service = SystemService()
         self.session_service = SessionService()
-        self.popup: StatsPopup = StatsPopup()
         self.notified_threshold = False
         self.snooze_until: Optional[datetime.datetime] = None
         self._dbus_signal_handler: Optional[Callable[[int, str], None]] = None
+
+        # Initialize plugin system for UI process
+        self.plugin_manager = PluginManager()
+        self.plugin_manager.discover_plugins()
+        self.plugin_manager.set_plugin_manager_for_all()
+
+        # Register plugin event handlers
+        for plugin in self.plugin_manager.plugins.values():
+            try:
+                plugin.register_events(self.plugin_manager)
+            except Exception as e:
+                print(f"Error registering events for plugin: {e}")
+
+        self.popup: StatsPopup = StatsPopup(self.plugin_manager)
 
         self.visuals = TrayIconVisuals()
 
@@ -218,7 +232,7 @@ class TrayApp:
         self.menu = QMenu()
 
         # Emit event for plugins to add items at the top
-        self.popup.plugin_manager.events.emit(
+        self.plugin_manager.events.emit(
             Event.TRAY_READY,
             EventContext(menu=self.menu, tray=self, position='top')
         )
@@ -260,9 +274,6 @@ class TrayApp:
 
     def show_popup(self) -> None:
         """Show the statistics popup window."""
-        # --- Use new position-aware method ---
-        # icon_geom = self.tray_icon.geometry()
-        # self.popup.show_at_tray(icon_geom)
         self.popup.show()
         self.popup.activateWindow()
 
@@ -358,7 +369,6 @@ class TrayApp:
         if NOTIFY_BUTTONS.get("lock_screen", False):
             actions.append(("Lock Screen", self.lock_screen))
 
-        # --- UPDATE: Use state name, as the logic for color/icon name is internal ---
         alert_icon = self.visuals.get_static_icon("alert")
 
         # Use theme icon name for DBus. The colored version is for the QSystemTrayIcon fallback.
@@ -382,7 +392,6 @@ class TrayApp:
         if NOTIFY_BUTTONS.get("lock_screen", False):
             actions.append(("Test Lock", lambda: print("Test: Lock clicked")))
 
-        # --- UPDATE: Use state name, remove color argument ---
         active_icon = self.visuals.get_static_icon("active")
 
         if not self._notify_plasma(title, message, ICON_NORMAL, actions):
@@ -396,7 +405,6 @@ class TrayApp:
                                                 icon=icon, # Use the icon string passed
                                                 actions=actions, timeout=5000):
             # Fallback to standard tray message
-            # --- UPDATE: Use state name, remove color argument ---
             fallback_icon = self.visuals.get_static_icon("active")
             self.tray_icon.showMessage(title, message, fallback_icon, 5000)
             return False
@@ -410,7 +418,6 @@ class TrayApp:
         print(f"Snoozed until {self.snooze_until.isoformat()}")
         self.update_status() # Immediately update to "snooze" state
 
-        # --- UPDATE: Use state name, remove color argument ---
         self.tray_icon.showMessage("Snoozed",
                                   f"Alert snoozed for {settings.snooze_minutes} minutes",
                                   self.visuals.get_static_icon("snooze"), 3000)

@@ -23,7 +23,6 @@
 </nav>
 
 <main class="container">
-
   <section class="tab-content active" id="periods-tab">
     <div class="grid" style="gap: 0.5rem;">
       <button id="refresh" class="secondary">Refresh</button>
@@ -56,6 +55,8 @@
         <div id="detail-content"></div>
       </article>
     </div>
+
+    <!-- CONTENT_SLOT: periods_bottom -->
   </section>
 
   <section class="tab-content" id="events">
@@ -70,8 +71,9 @@
       </select>
     </div>
     <div class="event-list" id="event-list"></div>
-  </section>
 
+    <!-- CONTENT_SLOT: events_bottom -->
+  </section>
 </main>
 
 <footer class="container" style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.85rem;">

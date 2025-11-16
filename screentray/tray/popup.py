@@ -1,4 +1,4 @@
-"""Statistics popup window with event-driven plugin system."""
+"""Statistics popup window."""
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QTabWidget
 )
@@ -15,17 +15,18 @@ from ..events import Event, EventContext
 
 class StatsPopup(QWidget):
     """
-    Statistics popup with native tray behavior.
+    Statistics popup
 
     Emits POPUP_READY event for plugins to add widgets without
     coupling core to plugin implementations.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, plugin_manager: PluginManager) -> None:
         super().__init__()
         self.date = datetime.date.today()
         self.stats_service = StatsService()
         self.session_service = SessionService()
+        self.plugin_manager = plugin_manager
 
         # Configure as native popup window
         self.setWindowTitle("ScreenTray Statistics")
@@ -43,20 +44,8 @@ class StatsPopup(QWidget):
         self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.setLayout(self.main_layout)
 
-        # Initialize plugin manager and collect widgets
-        self.plugin_manager = PluginManager()
-        self.plugin_manager.discover_plugins()
-
-        # Register event handlers before emitting events
-        for plugin in self.plugin_manager.plugins.values():
-            try:
-                plugin.register_events(self.plugin_manager)
-            except Exception as e:
-                print(f"Error registering events for plugin: {e}")
-
         # Legacy support: collect widgets from get_popup_widget()
         self.plugin_widgets: List[QWidget] = []
-
         for plugin in self.plugin_manager.plugins.values():
             widget = plugin.get_popup_widget()
             if widget:
