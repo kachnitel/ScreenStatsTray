@@ -1,5 +1,5 @@
 // App Usage Plugin JavaScript
-console.log("App Usage Plugin JavaScript loaded");
+console.info("App Usage Plugin JavaScript loaded");
 
 function formatAppDuration(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -10,50 +10,8 @@ function formatAppDuration(seconds) {
   return `${s}s`;
 }
 
-async function loadAppUsageOverview() {
-  console.log("loadAppUsageOverview called");
-  try {
-    const resp = await fetch('/api/app_usage/today');
-    console.log("API response status:", resp.status);
-    const data = await resp.json();
-    console.log("API data:", data);
-
-    const container = document.getElementById('app-usage-overview-list');
-    if (!container) {
-      console.error("Container #app-usage-overview-list not found");
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      container.innerHTML = '<p style="color: var(--pico-muted-color);"><i>No app usage recorded yet</i></p>';
-      return;
-    }
-
-    // Show top 5
-    const top5 = data.slice(0, 5);
-    let html = '<div style="display: grid; gap: 0.25rem;">';
-    top5.forEach(item => {
-      html += `<div style="display: flex; justify-content: space-between;">
-        <span>${item.app}</span>
-        <span style="color: var(--pico-muted-color);">${formatAppDuration(item.seconds)}</span>
-      </div>`;
-    });
-    html += '</div>';
-
-    if (data.length > 5) {
-      html += `<p style="margin-top: 0.5rem; font-size: 0.85em; color: var(--pico-muted-color);">
-        +${data.length - 5} more apps
-      </p>`;
-    }
-
-    container.innerHTML = html;
-  } catch (e) {
-    console.error('Failed to load app usage:', e);
-  }
-}
-
 async function loadAppUsageDaily() {
-  console.log("loadAppUsageDaily called");
+  console.debug("loadAppUsageDaily called");
   try {
     const dateStr = formatDate(currentDate);
     const start = new Date(currentDate);
@@ -91,7 +49,7 @@ async function loadAppUsageDaily() {
 }
 
 async function loadAppUsageTab() {
-  console.log("loadAppUsageTab called");
+  console.debug("loadAppUsageTab called");
   const period = document.getElementById('app-usage-period').value;
   const limit = parseInt(document.getElementById('app-usage-limit').value);
 
@@ -158,25 +116,25 @@ async function loadAppUsageTab() {
 }
 
 // Call loadAppUsageOverview when page loads
-console.log("Setting up window.onload handler");
+console.debug("Setting up window.onload handler");
 window.addEventListener('load', function() {
-  console.log("Window loaded, calling loadAppUsageOverview");
-  loadAppUsageOverview();
+  console.debug("Window loaded, calling loadAppUsageOverview");
+  // loadAppUsageOverview();
 });
 
 // Hook into existing loadPeriods if it exists
 if (typeof loadPeriods !== 'undefined') {
-  console.log("Wrapping loadPeriods");
+  console.debug("Wrapping loadPeriods");
   const originalLoadPeriods = loadPeriods;
   loadPeriods = async function() {
     await originalLoadPeriods();
-    loadAppUsageOverview();
+    // loadAppUsageOverview();
   };
 }
 
 // Hook into existing loadDailyView if it exists
 if (typeof loadDailyView !== 'undefined') {
-  console.log("Wrapping loadDailyView");
+  console.debug("Wrapping loadDailyView");
   const originalLoadDaily = loadDailyView;
   loadDailyView = async function() {
     await originalLoadDaily();
@@ -186,24 +144,50 @@ if (typeof loadDailyView !== 'undefined') {
 
 // Setup event listeners when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log("DOM loaded, setting up event listeners");
+  console.debug("DOM loaded, setting up event listeners");
 
   const periodSelect = document.getElementById('app-usage-period');
   const limitInput = document.getElementById('app-usage-limit');
 
   if (periodSelect) {
     periodSelect.addEventListener('change', loadAppUsageTab);
-    console.log("Added change listener to period select");
+    console.debug("Added change listener to period select");
   }
   if (limitInput) {
     limitInput.addEventListener('change', loadAppUsageTab);
-    console.log("Added change listener to limit input");
+    console.debug("Added change listener to limit input");
   }
 
   // Setup Apps tab click handler
-  const appsTab = document.querySelector('a[data-tab="apps"]');
-  if (appsTab) {
-    appsTab.addEventListener('click', loadAppUsageTab);
-    console.log("Added click listener to apps tab");
+  // Use polling to wait for dynamically injected tab
+  const attachTabHandler = () => {
+    const appsTab = document.querySelector('a[data-tab="apps"]');
+    if (appsTab) {
+      console.debug("Apps tab found, attaching handler");
+      appsTab.addEventListener('click', () => {
+        console.debug("Apps tab clicked, loading data");
+        loadAppUsageTab();
+      });
+      return true;
+    }
+    return false;
+  };
+
+  // Try immediately
+  if (!attachTabHandler()) {
+    // If not found, poll for it (in case it's injected after DOM ready)
+    console.debug("Apps tab not found, polling...");
+    const pollInterval = setInterval(() => {
+      if (attachTabHandler()) {
+        console.debug("Apps tab handler attached");
+        clearInterval(pollInterval);
+      }
+    }, 100);
+
+    // Stop polling after 5 seconds
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      console.debug("Stopped polling for Apps tab");
+    }, 5000);
   }
 });

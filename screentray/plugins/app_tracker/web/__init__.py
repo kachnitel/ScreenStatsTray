@@ -41,7 +41,7 @@ class AppTrackerWeb:
         """Return web UI content for injection."""
         return {
             'slots': {
-                'overview_bottom': self._read_file('templates/overview.html'),
+                # 'overview_bottom': self._read_file('templates/overview.html'),
                 'daily_bottom': self._read_file('templates/daily.html'),
             },
             'javascript': self._read_file('static/app_usage.js'),

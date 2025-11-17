@@ -125,11 +125,13 @@ def inject_plugin_content(html: str, plugins: List[Any]) -> str:
         for tab in plugin_tabs:
             tab_id = tab['id']
             tab_title = tab['title']
-            tab_nav_html += f'<li><a href="#" role="button" data-tab="{tab_id}">{tab_title}</a></li>\n'
-            tab_content_html += f'<section class="tab-content" id="{tab_id}">\n{tab["content"]}\n</section>\n'
+            # Proper indentation for nav items
+            tab_nav_html += f'    <li><a href="#" role="button" data-tab="{tab_id}">{tab_title}</a></li>\n'
+            # Proper indentation for content sections
+            tab_content_html += f'  <section class="tab-content" id="{tab_id}">\n{tab["content"]}\n  </section>\n\n'
 
-        # Inject navigation items before closing </ul>
-        html = html.replace('</ul>\n</nav>', f'{tab_nav_html}</ul>\n</nav>')
+        # Inject navigation items before plugin tabs marker
+        html = html.replace('<!-- PLUGIN_TABS -->', tab_nav_html + '<!-- PLUGIN_TABS -->')
 
         # Inject content sections before closing </main>
         html = html.replace('</main>', f'{tab_content_html}</main>')

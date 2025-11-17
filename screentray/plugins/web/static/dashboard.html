@@ -16,6 +16,7 @@
   <ul id="tab-nav-list" class="tabs">
     <li><a href="#" role="button" data-tab="daily" aria-current="page">Daily</a></li>
     <li><a href="#" role="button" data-tab="weekly">Weekly</a></li>
+    <!-- PLUGIN_TABS -->
   </ul>
   <ul style="padding: 0;">
     <li style="padding: 0.5rem;">
@@ -43,9 +44,9 @@
       <h3>Activity by Hour</h3>
       <div class="bar-chart" id="hourly-chart"></div>
     </article>
-  </section>
 
-  <!-- CONTENT_SLOT: daily_bottom -->
+    <!-- CONTENT_SLOT: daily_bottom -->
+  </section>
 
   <section class="tab-content" id="weekly">
     <div class="grid" style="gap: 0.5rem;">
@@ -65,11 +66,9 @@
         <div class="bar-chart" id="weekly-bar-chart"></div>
       </article>
     </div>
+
+    <!-- CONTENT_SLOT: weekly_bottom -->
   </section>
-
-  <!-- CONTENT_SLOT: weekly_bottom -->
-
-
 
 </main>
 
