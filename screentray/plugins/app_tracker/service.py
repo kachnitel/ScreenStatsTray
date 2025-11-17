@@ -73,9 +73,14 @@ class AppUsageService:
                     last_switch_time = None
 
         # Handle case where last app is still active
+        # IMPORTANT: Only count time up to 'end', not 'now'
         if current_app and last_switch_time:
-            duration = (end - last_switch_time).total_seconds()
-            app_times[current_app] = app_times.get(current_app, 0.0) + duration
+            # Use the earlier of 'end' or 'now' to avoid counting future time
+            effective_end = min(end, datetime.datetime.now())
+            # Only add duration if last_switch_time is before effective_end
+            if last_switch_time < effective_end:
+                duration = (effective_end - last_switch_time).total_seconds()
+                app_times[current_app] = app_times.get(current_app, 0.0) + duration
 
         return app_times
 
