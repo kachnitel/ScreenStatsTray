@@ -8,7 +8,7 @@ from typing import Any, Optional
 from PyQt5.QtWidgets import QAction, QPushButton
 from ..base import PluginBase
 from ..manager import PluginManager
-from ...events import Event, EventContext
+from ...events import Event, TrayReadyContext, PopupReadyContext
 from . import PLUGIN_INFO
 
 
@@ -75,7 +75,7 @@ class WebPlugin(PluginBase):
                 use_reloader=False
             )
 
-    def _on_tray_menu_ready(self, ctx: EventContext) -> None:
+    def _on_tray_menu_ready(self, ctx: TrayReadyContext) -> None:
         """Create menu items, check server async."""
         menu = ctx.menu
 
@@ -97,7 +97,7 @@ class WebPlugin(PluginBase):
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(0, self._start_server_async)
 
-    def _on_popup_ready(self, ctx: EventContext) -> None:
+    def _on_popup_ready(self, ctx: PopupReadyContext) -> None:
         """
         Handle POPUP_READY event.
 

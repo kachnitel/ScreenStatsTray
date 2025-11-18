@@ -10,7 +10,7 @@ from .activity_bar import ActivityBar
 from ..services.stats_service import StatsService
 from ..services.session_service import SessionService
 from ..plugins import PluginManager
-from ..events import Event, EventContext
+from ..events import Event, PopupReadyContext
 
 
 class StatsPopup(QWidget):
@@ -61,7 +61,7 @@ class StatsPopup(QWidget):
         # Emit event for plugins to add buttons/widgets
         self.plugin_manager.events.emit(
             Event.POPUP_READY,
-            EventContext(popup=self, layout=self.main_layout)
+            PopupReadyContext(popup=self, layout=self.main_layout)
         )
 
         # Update timer

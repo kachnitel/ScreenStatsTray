@@ -1,6 +1,11 @@
 """Global event system for ScreenTray."""
 from enum import Enum
-from typing import Callable, Any, Dict, List
+from typing import Callable, Any, Dict, List, TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from PyQt5.QtWidgets import QMenu, QVBoxLayout
+    from ..tray.tray import TrayApp
+    from ..tray.popup import StatsPopup
 
 class Event(Enum):
     """Application-wide events."""
@@ -10,48 +15,51 @@ class Event(Enum):
     TRAY_READY = "tray_ready"
     POPUP_READY = "popup_ready"
 
-# class Event(Enum):
-#     """Events that plugins can subscribe to."""
-
-#     # UI Events
-#     TRAY_MENU_READY = "tray_menu_ready"
-#     POPUP_READY = "popup_ready"
-
-#     # Lifecycle Events
-#     APP_READY = "app_ready"
-#     APP_SHUTDOWN = "app_shutdown"
-
 
 class EventContext:
-    """Context passed to event handlers with relevant objects."""
+    """Base context for event handlers."""
+    pass
 
-    def __init__(self, **kwargs: Any) -> None:
-        for key, value in kwargs.items():
-            setattr(self, key, value)
 
-    def __repr__(self) -> str:
-        attrs = ', '.join(f"{k}={v!r}" for k, v in self.__dict__.items())
-        return f"EventContext({attrs})"
+class TrayReadyContext(EventContext):
+    """Context passed to TRAY_READY event handlers."""
+    def __init__(self, menu: 'QMenu', tray: 'TrayApp', position: str = 'top') -> None:
+        self.menu = menu
+        self.tray = tray
+        self.position = position
+
+
+class PopupReadyContext(EventContext):
+    """Context passed to POPUP_READY event handlers."""
+    def __init__(self, popup: 'StatsPopup', layout: 'QVBoxLayout') -> None:
+        self.popup = popup
+        self.layout = layout
+
+
+ContextT = TypeVar('ContextT', bound=EventContext)
+
 
 class EventBus:
     """Central event dispatcher."""
 
     def __init__(self) -> None:
-        self._handlers: Dict[Event, List[Callable[[EventContext], None]]] = {}
+        # Store handlers with Any type to allow different context subtypes
+        self._handlers: Dict[Event, List[Callable[[Any], None]]] = {}
 
-    def subscribe(self, event: Event, handler: Callable[[Any], None]) -> None:
-        """Subscribe to an event."""
+    def subscribe(self, event: Event, handler: Callable[[ContextT], None]) -> None:
+        """Subscribe to an event with a typed handler."""
         if event not in self._handlers:
             self._handlers[event] = []
-        self._handlers[event].append(handler)
+        self._handlers[event].append(handler)  # type: ignore[arg-type]
 
-    def emit(self, event: Event, data: Any = None) -> None:
+    def emit(self, event: Event, context: EventContext) -> None:
         """Emit an event to all subscribers."""
         for handler in self._handlers.get(event, []):
             try:
-                handler(data)
+                handler(context)
             except Exception as e:
                 print(f"Event handler error ({event.value}): {e}")
+
 
 # Global instance
 event_bus = EventBus()

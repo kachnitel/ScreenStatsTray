@@ -12,7 +12,7 @@ from PyQt5.QtCore import (
 from .popup import StatsPopup
 from ..config import ICON_PULSE_INTERVAL, settings, NOTIFY_BUTTONS
 from ..services.session_service import SessionService
-from ..events import Event, EventContext
+from ..events import Event, TrayReadyContext
 from ..plugins import PluginManager
 from . import config_dialog
 
@@ -234,7 +234,7 @@ class TrayApp:
         # Emit event for plugins to add items at the top
         self.plugin_manager.events.emit(
             Event.TRAY_READY,
-            EventContext(menu=self.menu, tray=self, position='top')
+            TrayReadyContext(menu=self.menu, tray=self, position="top")
         )
 
         # Settings action
