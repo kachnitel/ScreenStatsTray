@@ -4,7 +4,6 @@ Background service to track user activity with event-driven plugin system.
 """
 import os
 import time
-import subprocess
 import datetime
 from ..config import (
     DB_PATH,
@@ -15,7 +14,30 @@ from ..config import (
 )
 from ..db import ensure_db_exists
 from ..db.event_repository import EventRepository
+from ..platform import get_platform
 from ..plugins import PluginManager
+
+
+# Initialize platform
+platform = get_platform()
+
+def get_idle_seconds() -> float:
+    """Delegate to platform implementation."""
+    return platform.get_idle_seconds()
+
+def is_screen_on() -> bool:
+    """Delegate to platform implementation."""
+    return platform.is_screen_on()
+
+def get_active_window_info() -> str:
+    """Delegate to platform implementation for debug logging."""
+    info = platform.get_active_window_info()
+    if not info:
+        return "unknown"
+    app_name, window_title = info
+    if len(window_title) > 50:
+        window_title = window_title[:47] + "..."
+    return f"{app_name}: {window_title}"
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 IDLE_THRESHOLD_SEC = IDLE_THRESHOLD_MS / 1000.0
@@ -27,61 +49,6 @@ def debug_log(message: str) -> None:
         timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
         with open(DEBUG_LOG_PATH, 'a') as f:
             f.write(f"[{timestamp}] {message}\n")
-
-
-def get_idle_seconds() -> float:
-    """Return the current idle time in seconds."""
-    try:
-        idle_ms = int(subprocess.check_output(["xprintidle"]).strip())
-        idle_sec = idle_ms / 1000.0
-        if DEBUG_MODE:
-            debug_log(f"xprintidle: {idle_ms}ms ({idle_sec:.1f}s)")
-        return idle_sec
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        if DEBUG_MODE:
-            debug_log(f"xprintidle error: {e}")
-        return 0.0
-
-
-def is_screen_on() -> bool:
-    """Return True if monitor is on."""
-    try:
-        out = subprocess.check_output(["xset", "-q"]).decode()
-        is_on = "Monitor is On" in out
-        if DEBUG_MODE:
-            dpms_line = [line for line in out.split('\n') if 'Monitor is' in line]
-            debug_log(f"xset -q: {dpms_line[0].strip() if dpms_line else 'unknown'}")
-        return is_on
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        if DEBUG_MODE:
-            debug_log(f"xset error: {e}")
-        return True
-
-
-def get_active_window_info() -> str:
-    """Get info about the currently active window for debug purposes."""
-    try:
-        window_id = subprocess.check_output(
-            ["xdotool", "getactivewindow"],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-
-        app_name = subprocess.check_output(
-            ["xdotool", "getwindowclassname", window_id],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-
-        window_title = subprocess.check_output(
-            ["xdotool", "getwindowname", window_id],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-
-        if len(window_title) > 50:
-            window_title = window_title[:47] + "..."
-
-        return f"{app_name}: {window_title}"
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return "unknown"
 
 
 def main() -> None:

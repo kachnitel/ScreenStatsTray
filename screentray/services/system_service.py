@@ -1,20 +1,18 @@
-"""System command service."""
-import subprocess
+"""System command service with platform abstraction."""
+from ..platform import get_platform
+
 
 class SystemService:
-    """Handles system-level commands."""
+    """Handles system-level commands via platform layer."""
 
-    @staticmethod
-    def suspend() -> None:
-        """Suspend the system."""
-        subprocess.run(["systemctl", "suspend", "--check-inhibitors=no"], check=False)
+    def __init__(self) -> None:
+        self.platform = get_platform()
 
-    @staticmethod
-    def screen_off() -> None:
-        """Turn off the screen."""
-        subprocess.run(["xset", "dpms", "force", "off"], check=False)
+    def suspend(self) -> bool:
+        return self.platform.suspend()
 
-    @staticmethod
-    def lock_screen() -> None:
-        """Lock the screen."""
-        subprocess.run(["loginctl", "lock-session"], check=False)
+    def screen_off(self) -> bool:
+        return self.platform.screen_off()
+
+    def lock_screen(self) -> bool:
+        return self.platform.lock_screen()

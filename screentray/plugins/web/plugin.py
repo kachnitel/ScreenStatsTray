@@ -90,7 +90,7 @@ class WebPlugin(PluginBase):
             menu.insertAction(first_action, self.tray_action)
             menu.insertSeparator(menu.actions()[1])
         else:
-            menu.addAction(self.tray_action)
+            menu.addAction(self.tray_action) # pyright: ignore[reportUnknownMemberType]
             menu.addSeparator()
 
         # Start server in background

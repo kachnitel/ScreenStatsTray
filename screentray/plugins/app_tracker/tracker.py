@@ -3,43 +3,21 @@ screentray/plugins/app_tracker/tracker.py
 
 Active window monitoring for application tracking.
 """
-import subprocess
-from typing import Optional
+from typing import Optional, Tuple
+from ...platform import get_platform
 
 
-def get_active_window_info() -> Optional[tuple[str, str]]:
+def get_active_window_info() -> Optional[Tuple[str, str]]:
     """
     Get the currently active window's application name and title.
 
-    Uses xdotool to query X11 window information.
+    Delegates to platform implementation.
 
     Returns:
         Tuple of (app_name, window_title) or None on error
     """
-    try:
-        # Get active window ID
-        window_id = subprocess.check_output(
-            ["xdotool", "getactivewindow"],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-
-        # Get window class (application name)
-        app_name = subprocess.check_output(
-            ["xdotool", "getwindowclassname", window_id],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-
-        # Get window title
-        window_title = subprocess.check_output(
-            ["xdotool", "getwindowname", window_id],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-
-        return (app_name, window_title)
-
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
-
+    platform = get_platform()
+    return platform.get_active_window_info()
 
 class AppTracker:
     """

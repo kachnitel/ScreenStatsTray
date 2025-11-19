@@ -38,6 +38,15 @@ class AppTrackerPlugin(PluginBase):
 
     def start(self) -> None:
         """Begin tracking (called by screentracker on startup)."""
+        # Check platform compatibility
+        from ...platform import get_platform
+        platform = get_platform()
+
+        if not platform.supports_window_tracking:
+            print(f"Warning: App tracking unavailable on {platform.name} "
+                f"(window tracking not supported)")
+            return
+
         # Don't start tracking yet - wait for on_active()
         pass
 

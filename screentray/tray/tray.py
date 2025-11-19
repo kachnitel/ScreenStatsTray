@@ -247,18 +247,31 @@ class TrayApp:
         actions_added = False
 
         if NOTIFY_BUTTONS.get("suspend", False):
-            suspend_action: QAction = actions_menu.addAction("Suspend")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            suspend_action.triggered.connect(self.system_suspend)
+            action: QAction = actions_menu.addAction("Suspend")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
+            action.triggered.connect(self.system_suspend)
+            # Disable if platform doesn't support it
+            if not self.system_service.platform.suspend():
+                action.setEnabled(False)
+                action.setToolTip("Not available on this platform")
             actions_added = True
 
         if NOTIFY_BUTTONS.get("screen_off", False):
-            screen_off_action: QAction = actions_menu.addAction("Screen Off")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            screen_off_action.triggered.connect(self.screen_off)
+            action: QAction = actions_menu.addAction("Screen Off")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
+            action.triggered.connect(self.screen_off)
+            # Test availability
+            test_result = self.system_service.platform.screen_off()
+            if not test_result:
+                action.setEnabled(False)
+                action.setToolTip("Not available on this platform")
             actions_added = True
 
         if NOTIFY_BUTTONS.get("lock_screen", False):
-            lock_action: QAction = actions_menu.addAction("Lock Screen")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            lock_action.triggered.connect(self.lock_screen)
+            action: QAction = actions_menu.addAction("Lock Screen")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
+            action.triggered.connect(self.lock_screen)
+            test_result = self.system_service.platform.lock_screen()
+            if not test_result:
+                action.setEnabled(False)
+                action.setToolTip("Not available on this platform")
             actions_added = True
 
         if actions_added:
