@@ -4,7 +4,7 @@ import os
 from typing import Optional, List, Tuple, Callable, Dict, Any
 from ..services.notification_service import NotificationService
 from ..services.system_service import SystemService
-from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap, QCursor, QPalette
 from PyQt5.QtCore import (
     QTimer, Qt, QPropertyAnimation, QEasingCurve, QObject, pyqtProperty, pyqtSignal, QRect # type: ignore
@@ -72,7 +72,7 @@ class IconColor(QObject):
     def set_color(self, color: QColor) -> None:
         self._color = color
 
-    color: QColor = pyqtProperty(QColor, get_color, set_color)
+    color = pyqtProperty(QColor, get_color, set_color)
 
 
 class TrayIconVisuals(QObject):
@@ -225,6 +225,44 @@ class TrayApp:
         self.update_status()
         self.tray_icon.show()
 
+    def _populate_quick_actions_menu(self, menu: QMenu) -> bool:
+        """
+        Populate the quick actions submenu based on configuration and availability.
+        Returns True if at least one action was added (even if disabled).
+        """
+        actions_added = False
+
+        # Definition: (config_key, label, callback_method, command_list)
+        # Fix: Changed Optional[str] to Optional[List[str]] to match actual command types
+        action_defs: List[Tuple[str, str, Callable[[], None], Optional[List[str]]]] = [
+            ("suspend", "Suspend", self.system_suspend, self.system_service.platform.SUSPEND_COMMAND),
+            ("screen_off", "Screen Off", self.screen_off, self.system_service.platform.SCREEN_OFF_COMMAND),
+            ("lock_screen", "Lock Screen", self.lock_screen, self.system_service.platform.LOCK_COMMAND),
+        ]
+
+        for key, label, callback, command in action_defs:
+            if NOTIFY_BUTTONS.get(key, False):
+                # Fix: Remove explicit : QAction hint (addAction can return None)
+                action = menu.addAction(label) # pyright: ignore[reportUnknownMemberType]
+                if not action:
+                    continue
+
+                action.triggered.connect(callback)
+
+                # Check availability of the command
+                is_available = False
+                # Fix: Suppress private usage error; command is now correctly List[str]
+                if command and self.system_service.platform._run_command(command, check=True): # pyright: ignore[reportPrivateUsage]
+                    is_available = True
+
+                if not is_available:
+                    action.setEnabled(False)
+                    action.setToolTip("Not available on this platform")
+
+                actions_added = True
+
+        return actions_added
+
     def create_context_menu(self) -> None:
         """
         Create the context menu and emit event for plugins to extend it.
@@ -238,51 +276,23 @@ class TrayApp:
         )
 
         # Settings action
-        settings_action: QAction = self.menu.addAction("Settings...")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-        settings_action.triggered.connect(self.open_settings)
+        settings_action = self.menu.addAction("Settings...")  # pyright: ignore[reportUnknownMemberType]
+        if settings_action:
+            settings_action.triggered.connect(self.open_settings)
         self.menu.addSeparator()
 
-        # Quick Actions submenu
+        # Quick Actions submenu - check availability WITHOUT executing
         actions_menu = QMenu("Quick Actions", self.menu)
-        actions_added = False
 
-        if NOTIFY_BUTTONS.get("suspend", False):
-            action: QAction = actions_menu.addAction("Suspend")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            action.triggered.connect(self.system_suspend)
-            # Disable if platform doesn't support it
-            if not self.system_service.platform.suspend():
-                action.setEnabled(False)
-                action.setToolTip("Not available on this platform")
-            actions_added = True
-
-        if NOTIFY_BUTTONS.get("screen_off", False):
-            action: QAction = actions_menu.addAction("Screen Off")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            action.triggered.connect(self.screen_off)
-            # Test availability
-            test_result = self.system_service.platform.screen_off()
-            if not test_result:
-                action.setEnabled(False)
-                action.setToolTip("Not available on this platform")
-            actions_added = True
-
-        if NOTIFY_BUTTONS.get("lock_screen", False):
-            action: QAction = actions_menu.addAction("Lock Screen")  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]
-            action.triggered.connect(self.lock_screen)
-            test_result = self.system_service.platform.lock_screen()
-            if not test_result:
-                action.setEnabled(False)
-                action.setToolTip("Not available on this platform")
-            actions_added = True
-
-        if actions_added:
+        if self._populate_quick_actions_menu(actions_menu):
             self.menu.addMenu(actions_menu)
             self.menu.addSeparator()
 
         # Exit action
-        exit_action: QAction = self.menu.addAction("Exit")  # type: ignore[reportUnknownMemberType, reportAssignmentType]
-        exit_action.triggered.connect(self.quit_app)
+        exit_action = self.menu.addAction("Exit") # pyright: ignore[reportUnknownMemberType]
+        if exit_action:
+            exit_action.triggered.connect(self.quit_app)
 
-        # Set context menu
         self.tray_icon.setContextMenu(self.menu)
 
     def show_popup(self) -> None:
