@@ -153,7 +153,7 @@ function selectPeriod(idx) {
 
   if (p.trigger_event) {
     html += `
-      <p style="margin: 0.25rem 0;"><strong>Trigger:</strong> ${p.trigger_event.type}</p>
+      <p style="margin: 0.25rem 0;"><strong title="Event causing transition to next state">End Trigger:</strong> <span title="${formatTime(p.trigger_event.timestamp)}: ${p.trigger_event.detail}">${p.trigger_event.type}</span></p>
     `;
   }
 
