@@ -16,6 +16,7 @@
   <ul id="tab-nav-list" class="tabs">
     <li><a href="#" role="button" data-tab="daily" aria-current="page">Daily</a></li>
     <li><a href="#" role="button" data-tab="weekly">Weekly</a></li>
+    <li><a href="#" role="button" data-tab="trends">Trends</a></li>
     <!-- PLUGIN_TABS -->
   </ul>
   <ul style="padding: 0;">
@@ -70,6 +71,23 @@
     <!-- CONTENT_SLOT: weekly_bottom -->
   </section>
 
+  <section class="tab-content" id="trends">
+    <article>
+      <h3>24-Hour Activity (Rolling)</h3>
+      <div class="bar-chart" id="bar-24h"></div>
+    </article>
+
+    <article>
+      <h3>30-Day Trend</h3>
+      <div class="bar-chart" id="trend-30d"></div>
+    </article>
+
+    <article>
+      <h3>3-Month Heatmap</h3>
+      <div id="heatmap-3m"></div>
+    </article>
+  </section>
+
 </main>
 
 <footer class="container" style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.85rem;">
@@ -77,5 +95,6 @@
 </footer>
 
 <script src="dashboard.js"></script>
+<script src="trends.js"></script>
 </body>
 </html>

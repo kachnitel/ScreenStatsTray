@@ -291,3 +291,71 @@ button.secondary, button.outline.secondary {
 .hidden {
   display: none;
 }
+
+/* 24h Bar Chart */
+#bar-24h {
+  height: 200px;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+#bar-24h .bar {
+  flex: 1;
+  background: var(--pico-primary);
+  min-width: 8px;
+  position: relative;
+}
+
+#bar-24h .bar .bar-value {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7em;
+  white-space: nowrap;
+}
+
+/* 30-day Trend */
+#trend-30d {
+  height: 180px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+#trend-30d .bar {
+  flex: 1;
+  background: var(--pico-primary);
+  min-width: 6px;
+}
+
+/* Heatmap */
+#heatmap-3m {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+  gap: 3px;
+  margin-top: 0.5rem;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  background: var(--pico-primary);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.1);
+  z-index: 10;
+}
+
+.heatmap-cell .date {
+  font-size: 0.7em;
+  font-weight: bold;
+  color: var(--pico-contrast-inverse);
+}

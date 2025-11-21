@@ -45,6 +45,37 @@ def register_routes(app: Flask) -> None:
             traceback.print_exc()
             return jsonify({"error": str(e)}), 400
 
+    @app.route("/api/hourly/24h")
+    def api_hourly_24h() -> Any: # pyright: ignore[reportUnusedFunction]
+        """Get hourly breakdown for last 24 hours."""
+        try:
+            return jsonify(activity_service.get_hourly_breakdown_24h())
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/daily/range")
+    def api_daily_range() -> Any: # pyright: ignore[reportUnusedFunction]
+        """Get daily totals for date range."""
+        try:
+            start_str = request.args.get('start')
+            end_str = request.args.get('end')
+
+            if not start_str or not end_str:
+                return jsonify({"error": "Missing start or end parameter"}), 400
+
+            start_date = datetime.date.fromisoformat(start_str)
+            end_date = datetime.date.fromisoformat(end_str)
+
+            return jsonify(activity_service.get_daily_totals_range(start_date, end_date))
+        except ValueError as e:
+            return jsonify({"error": f"Invalid date format: {e}"}), 400
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
 
 def open_conn() -> sqlite3.Connection:
     """Open database connection."""

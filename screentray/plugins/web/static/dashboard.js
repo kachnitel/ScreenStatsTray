@@ -251,3 +251,18 @@ window.onload = () => {
   currentWeekStart = new Date();
   loadDailyView();
 };
+
+// Hook trends tab
+const originalSetup = setupTabSwitching;
+setupTabSwitching = function() {
+  originalSetup();
+  
+  document.querySelectorAll('#tab-nav-list a[role="button"]').forEach(tab => {
+    const original = tab.onclick;
+    tab.onclick = (e) => {
+      original(e);
+      const targetId = tab.dataset.tab;
+      if (targetId === "trends") loadTrendsTab();
+    };
+  });
+};

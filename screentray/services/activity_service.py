@@ -31,6 +31,98 @@ class ActivityService:
         events = self.repo.find_events_in_period(start, end)
         return self._build_simple_periods(events, start, end)
 
+    def get_hourly_breakdown_24h(self) -> List[Dict[str, Any]]:
+        """
+        Get active minutes per hour for last 24 hours.
+        Returns list of {hour: int, minutes: float} for rolling 24h window.
+        """
+        now = datetime.datetime.now()
+        start = now - datetime.timedelta(hours=24)
+        periods = self.get_activity_periods_last_24h()
+
+        # Initialize 24 buckets (hour 0-23 relative to start)
+        hourly: List[float] = [0.0] * 24
+
+        for period in periods:
+            if period["state"] != "active":
+                continue
+
+            p_start = period["start"]
+            p_end = period["end"]
+
+            # Clip to 24h window
+            if p_start < start:
+                p_start = start
+            if p_end > now:
+                p_end = now
+
+            # Calculate which hours this period spans
+            start_hour = int((p_start - start).total_seconds() / 3600)
+            end_hour = int((p_end - start).total_seconds() / 3600)
+
+            if start_hour == end_hour:
+                # Period within single hour
+                minutes = (p_end - p_start).total_seconds() / 60
+                if 0 <= start_hour < 24:
+                    hourly[start_hour] += minutes
+            else:
+                # Period spans multiple hours
+                # First partial hour
+                if 0 <= start_hour < 24:
+                    hour_end = start + datetime.timedelta(hours=start_hour + 1)
+                    minutes = (hour_end - p_start).total_seconds() / 60
+                    hourly[start_hour] += minutes
+
+                # Full hours in between
+                for h in range(start_hour + 1, min(end_hour, 24)):
+                    hourly[h] += 60.0
+
+                # Last partial hour
+                if 0 <= end_hour < 24:
+                    hour_start = start + datetime.timedelta(hours=end_hour)
+                    minutes = (p_end - hour_start).total_seconds() / 60
+                    hourly[end_hour] += minutes
+
+        # Convert to labeled format
+        result: List[Dict[str, Any]] = []
+        for i, minutes in enumerate(hourly):
+            hour_time = start + datetime.timedelta(hours=i)
+            result.append({
+                "hour": hour_time.hour,
+                "timestamp": hour_time.isoformat(),
+                "minutes": round(minutes, 1)
+            })
+
+        return result
+
+    def get_daily_totals_range(self, start_date: datetime.date,
+                               end_date: datetime.date) -> List[Dict[str, Any]]:
+        """
+        Get daily active/inactive totals for date range.
+        Returns list of {date: str, active_seconds: float, inactive_seconds: float}.
+        """
+        results: List[Dict[str, Any]] = []
+        current = start_date
+
+        while current <= end_date:
+            periods = self.get_activity_periods_for_day(current)
+
+            active_sec = sum(p["duration_seconds"] for p in periods
+                           if p["state"] == "active")
+            inactive_sec = sum(p["duration_seconds"] for p in periods
+                             if p["state"] == "inactive")
+
+            results.append({
+                "date": current.isoformat(),
+                "active_seconds": active_sec,
+                "inactive_seconds": inactive_sec,
+                "total_seconds": active_sec + inactive_sec
+            })
+
+            current += datetime.timedelta(days=1)
+
+        return results
+
     def _build_simple_periods(self, events: List[Event], period_start: datetime.datetime,
                               period_end: datetime.datetime) -> List[Dict[str, Any]]:
         """
