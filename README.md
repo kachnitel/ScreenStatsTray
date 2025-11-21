@@ -83,3 +83,13 @@ Pull requests for new features or bug fixes are welcome
 ## Uninstallation
 
 To remove ScreenTracker: `./uninstall.sh`
+
+# Known issues
+
+## Service initialization
+
+App may be started before UI is initiated and fails to communicate with DE
+
+## Popup positioning
+
+Clicking tray popup opens the window at 0:0
